@@ -23,7 +23,6 @@ w_buffer = device.buffer(source=w)
 def solve(w,u,q):
     x = new_int(get_global_id(0))
     y = new_int(get_global_id(1))
-    n = new_int(get_global_size(0))
     site = new_int(x*n+y)
     if y!=0 and y!=n-1 and x!=0 and x!=n-1:
         up = new_int(site-n)
@@ -32,7 +31,7 @@ def solve(w,u,q):
         right = new_int(site+1)
         w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
 
-program = device.compile(device.define.code)
+program = device.compile(device.define.getcode(constants=dict(n=n)))
 
 for k in range(3000):
     program.solve(device.queue, [n,n], None, w_buffer, u_buffer, q_buffer)

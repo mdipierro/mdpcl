@@ -53,7 +53,9 @@ class C99Handler(object):
         return 'void %s(%s) {\n/*@VARS*/\n%s\n}' % (
             item.name, args, self.t(item.body,pad+self.sep))
     def is_Name(self,item,pad):
-        return self.constants.get(item.id,item.id)
+        if not item.id in self.constants:
+            return item.id
+        return self.represent(self.constants[item.id])
     def is_For(self,item,pad):
         if not item.iter.func.id == 'range': raise NotImplementedError
         args = item.iter.args
@@ -66,11 +68,11 @@ class C99Handler(object):
         else: raise NotImplementedError
         if isinstance(item.target,ast.Name) and not item.target.id in self.symbols:
             self.symbols[item.target.id] = 'long'
-        return 'for(%(n)s=%(a)s; %(n)s<%(b)s; %(n)s+=%(c)s) {\n%(d)s\n%(p)s}' % dict(
+        return 'for (%(n)s=%(a)s; %(n)s<%(b)s; %(n)s+=%(c)s) {\n%(d)s\n%(p)s}' % dict(
             n=self.t(item.target), a=start, b=stop, c=incr, 
             d=self.t(item.body,pad+self.sep),p=pad)
     def is_If(self,item,pad):        
-        code = 'if(%(c)s) {\n%(b)s\n%(p)s}' % dict(
+        code = 'if (%(c)s) {\n%(b)s\n%(p)s}' % dict(
             c=self.t(item.test), b=self.t(item.body,pad+self.sep), p=pad)
         if item.orelse:
             code += 'else {\n%(e)s\n%(p)s}' % dict(
@@ -98,18 +100,17 @@ class C99Handler(object):
         left, right = item.targets[0], item.value
         if isinstance(left,ast.Name) and not left.id in self.symbols:
             if isinstance(right,ast.Call) and right.func.id.startswith('new_'):
-                self.symbols[left.id] = right.func.id[4:]
+                self.symbols[left.id] = right.func.id[4:]                
                 right = right.args[0] if right.args else None
             else:
-                print ast.dump(left)
                 raise RuntimeError('unkown C-type %s' % left.id)
         return '%s = %s;' % (self.t(item.targets[0]),self.t(right)) if right else ''
     def is_Call(self,item,pad):
         return '%s(%s)' % (self.t(item.func),','.join(self.t(a) for a in item.args))
     def is_Num(self,item,pad):
-        return str(item.n)
+        return self.represent(item.n)
     def is_Str(self,item,pad):
-        return '"%s"' % item.s.replace('"','\\"')
+        return self.represent(item.s)
     def is_UnaryOp(self,item,pad):
         return '(%s %s)' % (self.t(item.op),self.t(item.operand))
     def is_BinOp(self,item,pad):
@@ -128,15 +129,22 @@ class C99Handler(object):
         return 'return %s;' % self.t(item.value) if self.rettype else ''
     def is_Expr(self,item,pad):
         return self.t(item.value)+';'
-    def __init__(self, constants={}):
-        self.constants = constants
+    def represent(self,item):
+        if item is None:
+            return 'null'
+        elif isinstance(item,str):
+            return '"%s"' % item.replace('"','\\"')
+        else:
+            return str(item)
+    def __init__(self):
+        self.constants = {}
         self.actions = { list: self.is_list }
         for key in dir(self):
             if key.startswith('is_') and key != 'is_list':
                 self.actions[getattr(ast,key[3:])] = getattr(self,key)
-        self.rettype = None # the return type of the function None is void
-        self.symbols = {} # {'a':'int','b':'float'}
     def compile(self,item,types,prefix=''):
+        self.rettype = None # the return type of the function None is void
+        self.symbols = {}
         code = self.is_FunctionDef(item,types,'')
         vars = ''.join('%s%s %s;\n' % (self.sep,self.make_type(v),k) 
                        for k,v in self.symbols.items())
@@ -152,29 +160,29 @@ class Compiler(object):
     def __init__(self,handler=C99Handler()):
         self.functions = {}
         self.handler = handler
-    def __call__(self,prefix='',**types):
+    def __call__(self,prefix='',name=None,**types):
         if prefix == 'kernel': prefix='__kernel '
-        def wrap(func,types=types):
+        def wrap(func,types=types,name=name,prefix=prefix):
+            if name is None: name = func.__name__
             decompiled = decompile_func(func)
-            compiled = self.handler.compile(decompiled,types,prefix=prefix)
-            self.functions[func.__name__] = dict(func=func, ast=decompiled, code=compiled)
+            self.functions[name] = dict(func=func, prefix=prefix, ast=decompiled,types=types)
             return func
         return wrap
-    @property
-    def code(self,headers=True):
-        if headers:
-            headers = [self.functions[key]['code'].split(' {')[0]+';'
-                       for key in self.functions]
-        else:
-            headers = []
-        functions = [self.functions[key]['code'] for key in self.functions]
-        return '\n\n'.join(headers + functions)
+    def getcode(self,headers=True,constants=None):
+        if constants: self.handler.constants.update(constants)
+        defs, funcs = [], []
+        for name, info in self.functions.iteritems():
+            code = self.handler.compile(info['ast'],info['types'],info['prefix']) 
+            info['code'] = code
+            if headers: defs.append(code.split(' {',1)[0]+';')
+            funcs.append(code)
+        return '\n\n'.join(defs+funcs)
 
 
 def test():
-    compile = Compiler()
+    c99 = Compiler()
 
-    @compile('kernel',a='global:ptr_float',b='global:ptr_float')
+    @c99('kernel',a='global:ptr_float',b='global:ptr_float')
     def f(a,b):
         w = new_int(0)
         c = new_int()
@@ -189,5 +197,7 @@ def test():
         printf('hello "%s"',world)
         delete(x)
         return c
-    print compile.code
+    return c99.getcode(headers=False)
 
+if __name__ == '__main__':
+    print test()
