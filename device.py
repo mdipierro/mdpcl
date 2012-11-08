@@ -75,7 +75,7 @@ class C99Handler(object):
         code = 'if (%(c)s) {\n%(b)s\n%(p)s}' % dict(
             c=self.t(item.test), b=self.t(item.body,pad+self.sep), p=pad)
         if item.orelse:
-            code += 'else {\n%(e)s\n%(p)s}' % dict(
+            code += ' else {\n%(e)s\n%(p)s}' % dict(
                 e=self.t(item.orelse,pad+self.sep), p=pad)
         return code
     def is_Compare(self,item,pad): 
