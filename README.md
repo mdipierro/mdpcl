@@ -162,3 +162,11 @@ Output:
 In the JS case, the call="f" option tells JS to call the newly defined function "f". Notice undefined assigned variables are automatically made local with `var`.
 
 Supported control structures include `def`, `if..else`, `for ... range`, `while`, `try ... except`, `break`, `continue`.
+
+## How does it work?
+
+It uses the meta library to convert python code into an "Abstract Syntax Three". It then calls a handler (C99Handler by default or JavaScriptHandler) which converts the AST into the target language.
+
+In the C99 case, if `filter=ezpy`, the target code is also compiled to machine language (using gcc) and the original Python function is replaced by the compiled one. 
+
+OpenCL is code is just C99 code with special type modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices.
