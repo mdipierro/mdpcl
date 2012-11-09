@@ -409,12 +409,12 @@ def test_EZPY():
         sys.exit(1)
     c99 = Compiler(filter=ezpy)    
     @c99(n='int')
-    def fact(n):
+    def factorial(n):
         output = new_int(1)
         for k in range(1,n+1):
             output = output*n
         return output
-    print fact(10)
+    print factorial(10)
 
 def test_OpenCL():
     if not HAVE_PYOPENCL:

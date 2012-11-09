@@ -57,21 +57,25 @@ Notice variables are declared via `new_int` or similar pseudo-function. Use `new
 
 `new_<type>`, `range`, `ADDR` (address of), `REFD` (reference by), `CAST`, `True`, `False` are keywords.
 
-## Convert Python Code into C99 Code and compile it in real time (with ezpyinline)
+## Convert Python Code into C99 Code and replace function with compiled one
+
+(requires ezpyinline)
 
     from mdpcl import Compiler, ezpy
     c99 = Compiler(filter=ezpy)
     @c99(n='int')
-    def fact(n):
-    output = new_int(1)
+    def factorial(n):
+        output = new_int(1)
         for k in range(1,n+1):
             output = output*n
         return output
-    print fact(10)
+    print factorial(10)
 
-The last function call "fact(10)" runs the C-compiled version of the ``fact`` function.
+The last function call `factorial(10)` runs the C-compiled version of the ``factorial`` function.
 
 ## Convert Python Code into OpenCL code and run it with PyOpenCL
+
+(requires pyopencl to run)
 
 Here is a solver for the Laplace equation "d^2 u = d in 2D"
 
