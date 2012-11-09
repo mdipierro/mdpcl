@@ -15,47 +15,61 @@ Examples:
 
     from mdpcl import Compiler
     c99 = Compiler()
-    @c99(a='int',b='int')
-    def f(a,b):
-        c = new_int(a)
+    @c99(a='int', b='int')
+    def f(a, b):
         for k in range(n):
-            if k<3:
-                c = c+b
+            while True:
+                break
+            if k==0 or k!=0 or k<0 or k>0 or not k==0 or \
+               k>=0 or k<=0 or k is None or k is not None:
+                continue
+        c = new_int(a+b)
+        printf("%i + %i = %i", a, b, c)
+
+        d = new_ptr_int(ADDR(c))
+        c = REFD(d)
         return c
-    print c99.getcode(headers=True,constants=dict(n=3))
+    print c99.getcode(headers=False, constants=dict(n=10))
 
 Output:
-
-    int f(int a, int b);
-
+    
     int f(int a, int b) {
-        int c;
         long k;
-        c = a;
-        for (k=0; k<3; k+=1) {
-            if (k < 3) {
-                c = (c + b);
+        int c;
+        int* d;
+        for (k=0; k<10; k+=1) {
+            while (1) {
+                break;
+            }
+            if (((k == 0) || ((k != 0) || ((k < 0) || ((k > 0) || ((! (k == 0)) ||
+                ((k >= 0) || ((k <= 0) || ((k == None) || (k != None)))))))))) {
+                continue;
             }
         }
+        c = (a + b);
+        printf("%i + %i = %i",a,b,c);
+        d = (&(c));
+        c = (*(d));
         return c;
     }
 
 Notice variables are declared via "new_int" or similar pseudo-function. Use "new_ptr_float" to define a "float*" or "new_ptr_ptr_long" for a "long**", etc. The getcode allows to pass constants defined in the code ("n" in the example). You must define the types of function arguments in the decorator "c99". The return type is inferred from the type of the object being returned (you must retrun a variable defined within the function or None/void). You can decorate more than one function and get the complete code.
 
+`new_<type>`, `range`, `ADDR` (address of), `REFD` (reference by), `True`, `False` are keywords.
+
 ## Convert Python Code into C99 Code and compile it in real time (with ezpyinline)
 
     from mdpcl import Compiler, ezpy
     c99 = Compiler(filter=ezpy)
-    @c99(a='int',b='int')
-    def f(a,b):
-        c = new_int(a)
-        for k in range(0,3,1):
-            if k<3:
-                c = c+b
-        return c
-    print f(1,2)
+    @c99(n='int')
+    def fact(n):
+    output = new_int(1)
+        for k in range(1,n+1):
+            output = output*n
+        return output
+    print fact(10)
 
-The last function call "f(1,2)" runs the C-compiled version of the f function.
+The last function call "fact(10)" runs the C-compiled version of the fact(orial) function.
 
 ## Convert Python Code into OpenCL code and run it with PyOpenCL
 
@@ -101,6 +115,7 @@ Output:
         }
     }
 
+
 A more comlete example that puts this code into context and runs it with PyOpenCL
 can be found in the example_3.py file.
 
@@ -112,19 +127,31 @@ can be found in the example_3.py file.
     js = Compiler(handler=JavaScriptHandler())
     @js()
     def f(a):
-        v = [1,2,'hello']
-        w = {'a':2,'b':4}
-        def g(): alert('hello')
+        a = new(array(1,2,3,4))
+        v = [1, 2, 'hello']
+	w = {'a': 2, 'b': 4}
+
+        def g():
+            try:
+                alert('hello')
+            except e:
+                alert(e)
         jQuery('button').click(lambda: g())
     print js.getcode(call='f')
 
 Output:
 
     var f = function(a) {
+        var a = new array(1,2,3,4);
+        var v = [1, 2, "hello"];
         var v = [1, 2, "hello"];
         var w = {"a":2, "b":4};
         var g = function() {
-            alert("hello");
+            try {
+                alert("hello");
+            catch (e) {
+                alert(e);
+            }
         }
         jQuery("button").click(function () { g() });
     }
@@ -132,4 +159,4 @@ Output:
 
 In the JS case, the call="f" option tells JS to call the newly defined function "f".
 
-###
+

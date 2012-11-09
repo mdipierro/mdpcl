@@ -28,9 +28,9 @@ except ImportError:
 
 class C99Handler(object):
     sep = ' ' * 4
-    macros = ["#define OBJ(x) (*(x))",
-              "#define ADDR(x) (&(x))"]
-
+    special_functions = {'REFD':'(*(%s))', 'ADDR':'(&(%s))'}
+    substitutions = {'NULL':'NULL', 'True':'1', 'False':'0'}
+    
     @staticmethod
     def make_type(name):
         newname = stars = ''
@@ -55,12 +55,33 @@ class C99Handler(object):
             item.name, args, self.t(item.body, pad + self.sep))
 
     def is_Name(self, item, pad):
-        if not item.id in self.constants:
-            return item.id
-        return self.represent(self.constants[item.id])
+        id = item.id
+        if id in self.substitutions:
+            return self.substitutions[id]
+        elif not id in self.constants:
+            return id
+        else:
+            return self.represent(self.constants[id])
+
+    def is_TryExcept(self, item, pad):
+        raise NotImplementedError
+        
+    def is_Break(self, item, pad):
+        return 'break;'
+    
+    def is_Continue(self, item, pad):
+        return 'continue;'
+    
+    def is_While(self, item, pad):
+        if item.orelse:
+            raise NotImplementedError
+        return 'while (%(c)s) {\n%(d)s\n%(p)s}' % dict(
+            c=self.t(item.test), d=self.t(item.body, pad + self.sep), p=pad)
 
     def is_For(self, item, pad):
         if not item.iter.func.id == 'range':
+            raise NotImplementedError
+        if item.orelse:
             raise NotImplementedError
         args = item.iter.args
         if len(args) == 1:
@@ -87,11 +108,15 @@ class C99Handler(object):
         return code
 
     def is_Compare(self, item, pad):
+        if len(item.ops) != 1 or len(item.comparators) != 1:
+            raise NotImplementedError
         return '(%s %s %s)' % (self.t(item.left),
                                self.t(item.ops[0]),
                                self.t(item.comparators[0]))
 
     def is_BoolOp(self, item, pad):
+        if len(item.values) != 2:
+            raise NotImplementedError
         return '(%s %s %s)' % (self.t(item.values[0]),
                                self.t(item.op),
                                self.t(item.values[1]))
@@ -130,6 +155,8 @@ class C99Handler(object):
         return '!='
 
     def is_Assign(self, item, pad):
+        if len(item.targets) != 1:
+            raise NotImplementedError
         left, right = item.targets[0], item.value
         if isinstance(left, ast.Name) and not left.id in self.symbols:
             if isinstance(right, ast.Call) and right.func.id.startswith('new_'):
@@ -140,7 +167,11 @@ class C99Handler(object):
         return '%s = %s;' % (self.t(item.targets[0]), self.t(right)) if right else ''
 
     def is_Call(self, item, pad):
-        return '%s(%s)' % (self.t(item.func), ','.join(self.t(a) for a in item.args))
+        func = self.t(item.func)
+        args = ','.join(self.t(a) for a in item.args)
+        if func in self.special_functions:
+            return self.special_functions[func] % args
+        return '%s(%s)' % (func,args)
 
     def is_List(self, item, pad):
         return '{%s}' % ', '.join(self.t(k, pad) for k in item.elts)
@@ -190,7 +221,7 @@ class C99Handler(object):
 
     def represent(self, item):
         if item is None:
-            return 'NULL'
+            return self.substitutions['NULL']
         elif isinstance(item, str):
             return '"%s"' % item.replace('"', '\\"')
         else:
@@ -219,7 +250,8 @@ class C99Handler(object):
 
 
 class JavaScriptHandler(C99Handler):
-    macros = []
+    special_functions = {'new': 'new %s'}
+    substitutions = {'NULL':'null', 'True':'true', 'False':'false'}
 
     @staticmethod
     def make_type(name):
@@ -233,12 +265,24 @@ class JavaScriptHandler(C99Handler):
         return '{%s}' % ', '.join(self.t(ks[k], pad) + ':' + self.t(vs[k], pad)
                                   for k in range(n))
 
+    def is_TryExcept(self, item, pad):
+        code = 'try {\n%(b)s\n%(p)s}' % dict(
+            b=self.t(item.body, pad + self.sep), p=pad)
+        if len(item.handlers) != 1:
+            raise NotImplementedError
+        handler = item.handlers[0]
+        code += ' catch(%(n)s) {\n%(e)s\n%(p)s}' % dict(
+            n=self.t(handler.type, pad), e=self.t(handler.body, pad + self.sep), p=pad)
+        return code
+
     def is_FunctionDef(self, item, pad):
         args = ', '.join(a.id for a in item.args.args)
         return 'var %s = function(%s) {\n%s\n%s}' % (
             item.name, args, self.t(item.body, pad + self.sep), pad)
 
     def is_Assign(self, item, pad):
+        if len(item.targets) != 1:
+            raise NotImplementedError
         left, right = item.targets[0], item.value
         if isinstance(left, ast.Name) and not left.id in self.symbols:
             if isinstance(right, ast.Call) and right.func.id.startswith('new_'):
@@ -308,7 +352,7 @@ class Compiler(object):
             if headers:
                 defs.append(code.split(' {', 1)[0] + ';')
             funcs.append(code)
-        code = '\n\n'.join(self.handler.macros + defs + funcs)
+        code = '\n\n'.join(defs + funcs)
         if call:
             code = code + '\n\n%s();' % call
         return code
@@ -337,36 +381,42 @@ if HAVE_PYOPENCL:
             return pyopencl.Program(self.ctx, kernel).build()
 
 
-def test():
-    if not HAVE_PYOPENCL:
-        logging.error('must install "pyopencl"')
-        sys.exit(1)
+def test_c99():
+    c99 = Compiler()
+    @c99(a='int', b='int')
+    def f(a, b):
+        for k in range(n):
+            while True:
+                break
+            if k==0 or k!=0 or k<0 or k>0 or not k==0 or \
+               k>=0 or k<=0 or k is None or k is not None:                    
+                continue
+        c = new_int(a+b)
+        printf("%i + %i = %i", a, b, c)
+
+        d = new_ptr_int(ADDR(c))
+        c = REFD(d)
+        return c
+    print c99.getcode(headers=False, constants=dict(n=10))
+
+def test_EZPY():
     if not HAVE_EZPYINLINE:
         logging.error('must install "ezpyinline"')
         sys.exit(1)
-    print '=' * 30
-    print 'Example: generate C99 code'
-    print '=' * 30
-    c99 = Compiler(filter=ezpy)
+    c99 = Compiler(filter=ezpy)    
+    @c99(n='int')
+    def fact(n):
+        output = new_int(1)
+        for k in range(1,n+1):
+            output = output*n
+        return output
+    print fact(10)
 
-    @c99(a='int', b='int')
-    def f(a, b):
-        c = new_int(a)
-        for k in range(0, 3, 1):
-            if k > 0 or k < 0 or k >= 0 or k <= 0 or k is 1 or \
-                    k is not 1 or k == 1 or k != 1 and 1 == 1:
-                c = c + b
-        return c
-    print c99.getcode(headers=True)
-    print 'running the generated C code'
-    print f(1, 2)
-    assert f(1, 2) == 7
-
-    print '\n' + '=' * 30
-    print 'Example: generate OpenCL code'
-    print '=' * 30
+def test_OpenCL():
+    if not HAVE_PYOPENCL:
+        logging.error('must install "pyopencl"')
+        sys.exit(1)
     device = Device()
-
     @device.define('kernel', a='global:ptr_float2', b='global:const:ptr_float2')
     def f(a, b):
         gid = new_int(get_global_id(0))
@@ -374,20 +424,24 @@ def test():
         b[gid].y = a[gid].y
     print device.define.getcode(headers=True)
 
-    print '\n' + '=' * 30
-    print 'Example: generate JS + jQuery code'
-    print '=' * 30
+def test_JS():
     js = Compiler(handler=JavaScriptHandler())
-
     @js()
     def f(a):
+        a = new(array(1,2,3,4))
         v = [1, 2, 'hello']
         w = {'a': 2, 'b': 4}
 
         def g():
-            alert('hello')
+            try:
+                alert('hello')
+            except e:
+                alert(e)
         jQuery('button').click(lambda: g())
     print js.getcode(call='f')
 
 if __name__ == '__main__':
-    test()
+    test_c99()
+    test_EZPY()
+    test_OpenCL()
+    test_JS()
