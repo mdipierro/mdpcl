@@ -120,9 +120,7 @@ Output:
     }
 
 
-Here `__kernel`, `__global`, and `__local` are OpenCL modifiers.
-A more comlete example that puts this code into context and runs it with PyOpenCL
-can be found in the example_3.py file.
+Here `__kernel`, `__global`, and `__local` are OpenCL modifiers. `get_global_id` and `get_global_size` are OpenCL specific functions. A more comlete example that puts this code into context and runs it with PyOpenCL can be found in the example_3.py file.
 
 ## Convert Python Code into Javascript Code 
 
