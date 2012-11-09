@@ -130,7 +130,7 @@ can be found in the example_3.py file.
     def f(a):
         a = new(array(1,2,3,4))
         v = [1, 2, 'hello']
-	w = {'a': 2, 'b': 4}
+        w = {'a': 2, 'b': 4}
         def g():
             try:
                 alert('hello')
