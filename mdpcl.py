@@ -28,7 +28,11 @@ except ImportError:
 
 class C99Handler(object):
     sep = ' ' * 4
-    special_functions = {'REFD':'(*(%s))', 'ADDR':'(&(%s))'}
+    special_functions = {
+        'REFD':lambda args: '(*(%s))' % ', '.join(args), 
+        'ADDR':lambda args: '(&(%s))' % ', '.join(args),
+        'CAST':lambda args: '(%s)(%s)' % (C99Handler.make_type(args[0]), args[1])
+        }
     substitutions = {'NULL':'NULL', 'True':'1', 'False':'0'}
     
     @staticmethod
@@ -168,9 +172,9 @@ class C99Handler(object):
 
     def is_Call(self, item, pad):
         func = self.t(item.func)
-        args = ','.join(self.t(a) for a in item.args)
+        args = [self.t(a) for a in item.args]
         if func in self.special_functions:
-            return self.special_functions[func] % args
+            return self.special_functions[func](args)
         return '%s(%s)' % (func,args)
 
     def is_List(self, item, pad):
@@ -250,7 +254,7 @@ class C99Handler(object):
 
 
 class JavaScriptHandler(C99Handler):
-    special_functions = {'new': 'new %s'}
+    special_functions = {'new': lambda args: 'new %s' % ', '.join(args)}
     substitutions = {'NULL':'null', 'True':'true', 'False':'false'}
 
     @staticmethod
@@ -394,8 +398,8 @@ def test_c99():
         c = new_int(a+b)
         printf("%i + %i = %i", a, b, c)
 
-        d = new_ptr_int(ADDR(c))
-        c = REFD(d)
+        d = new_ptr_int(CAST(ptr_int,ADDR(c)))
+        c = REFD(d)        
         return c
     print c99.getcode(headers=False, constants=dict(n=10))
 
@@ -417,12 +421,21 @@ def test_OpenCL():
         logging.error('must install "pyopencl"')
         sys.exit(1)
     device = Device()
-    @device.define('kernel', a='global:ptr_float2', b='global:const:ptr_float2')
-    def f(a, b):
-        gid = new_int(get_global_id(0))
-        b[gid].x = a[gid].x
-        b[gid].y = a[gid].y
-    print device.define.getcode(headers=True)
+    @device.define('kernel',
+               w='global:ptr_float',
+               u='global:const:ptr_float',
+               q='global:const:ptr_float')
+    def solve(w,u,q):
+        x = new_int(get_global_id(0))
+        y = new_int(get_global_id(1))
+        site = new_int(x*n+y)
+        if y!=0 and y!=n-1 and x!=0 and x!=n-1:
+            up = new_int(site-n)
+            down = new_int(site+n)
+            left = new_int(site-1)
+            right = new_int(site+1)
+            w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
+    print device.define.getcode(headers=True, constants=dict(n=300))
 
 def test_JS():
     js = Compiler(handler=JavaScriptHandler())
