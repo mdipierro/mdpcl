@@ -55,7 +55,7 @@ Output:
 
 Notice variables are declared via `new_int` or similar pseudo-function. Use `new_ptr_float` to define a `float*` or `new_ptr_ptr_long` for a `long**`, etc. The getcode allows to pass `constants` defined in the code (`n` in the example). You must define the types of function arguments in the decorator "c99". The return type is inferred from the type of the object being returned (you must retrun a variable defined within the function or ``None`` for void). You can decorate more than one function and get the complete code.
 
-`new_<type>`, `range`, `ADDR` (address of), `REFD` (reference by), `CAST`, `True`, `False` are keywords.
+`new_<type>`, `range`, `ADDR` (address of), `REFD` (obj referenced by), `CAST`, `True`, `False` are keywords.
 
 ## Convert Python Code into C99 Code and replace function with compiled one
 
