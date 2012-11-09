@@ -1,37 +1,51 @@
 # pyopencl interface with python->c99 compiler
 # created by Massimo Di Pierro
 # license: 2-clause BSD
-# requires meta and pyopencl
-
+# requires numpy, pyopencl, meta, ezpyinline
 import logging
-import pyopencl
 import sys
 import ast
-import numpy
+
+try:
+    import numpy
+    import pyopencl
+    HAVE_PYOPENCL = True
+except ImportError:
+    HAVE_PYOPENCL = False
+
+try:
+    import ezpyinline
+    HAVE_EZPYINLINE = True
+except ImportError:
+    HAVE_EZPYINLINE = False
+
 try:
     from meta.decompiler import decompile_func
 except ImportError:
     logging.error('need to install meta')
 
-class Device(object):
-    flags = pyopencl.mem_flags
-    def __init__(self):
-        self.ctx = pyopencl.create_some_context()
-        self.queue = pyopencl.CommandQueue(self.ctx)
-        self.define=Compiler()
-    def buffer(self,source=None,size=0,mode=pyopencl.mem_flags.READ_WRITE):
-        if source is not None: mode = mode | pyopencl.mem_flags.COPY_HOST_PTR
-        buffer = pyopencl.Buffer(self.ctx, mode, size=size, hostbuf=source)
-        return buffer
-    def retrieve(self,buffer,shape=None,dtype=numpy.float32):
-        output = numpy.zeros(shape or buffer.size/4,dtype=dtype)
-        pyopencl.enqueue_copy(self.queue, output, buffer)
-        return output
-    def compile(self,kernel):
-        return pyopencl.Program(self.ctx,kernel).build()
+if HAVE_PYOPENCL:
+    class Device(object):
+        flags = pyopencl.mem_flags
+        def __init__(self):
+            self.ctx = pyopencl.create_some_context()
+            self.queue = pyopencl.CommandQueue(self.ctx)
+            self.define=Compiler()
+        def buffer(self,source=None,size=0,mode=pyopencl.mem_flags.READ_WRITE):
+            if source is not None: mode = mode|pyopencl.mem_flags.COPY_HOST_PTR
+            buffer = pyopencl.Buffer(self.ctx, mode, size=size, hostbuf=source)
+            return buffer
+        def retrieve(self,buffer,shape=None,dtype=numpy.float32):
+            output = numpy.zeros(shape or buffer.size/4,dtype=dtype)
+            pyopencl.enqueue_copy(self.queue, output, buffer)
+            return output
+        def compile(self,kernel):
+            return pyopencl.Program(self.ctx,kernel).build()
 
 class C99Handler(object):
     sep = ' '*4    
+    macros = ["#define OBJ(x) (*(x))",
+              "#define ADDR(x) (&(x))"]
     @staticmethod
     def make_type(name):
         newname = stars = ''
@@ -94,6 +108,7 @@ class C99Handler(object):
     def is_Lt(self,item,pad): return '<'
     def is_GtE(self,item,pad): return '>='
     def is_LtE(self,item,pad): return '<='
+    def is_Is(self,item,pad): return '=='
     def is_IsNot(self,item,pad): return '!='
     def is_NotEq(self,item,pad): return '!='        
     def is_Assign(self,item,pad):
@@ -131,7 +146,7 @@ class C99Handler(object):
         return self.t(item.value)+';'
     def represent(self,item):
         if item is None:
-            return 'null'
+            return 'NULL'
         elif isinstance(item,str):
             return '"%s"' % item.replace('"','\\"')
         else:
@@ -155,49 +170,54 @@ class C99Handler(object):
     def t(self,item,pad=''):
         return self.actions[type(item)](item,pad)
 
+def ezpy(code,name):
+    ezc = ezpyinline.C(code)
+    return getattr(ezc, name)
 
 class Compiler(object):
-    def __init__(self,handler=C99Handler()):
+    def __init__(self,handler=C99Handler(),filter=None):
         self.functions = {}
         self.handler = handler
+        self.filter = filter
     def __call__(self,prefix='',name=None,**types):
         if prefix == 'kernel': prefix='__kernel '
         def wrap(func,types=types,name=name,prefix=prefix):
             if name is None: name = func.__name__
             decompiled = decompile_func(func)
-            self.functions[name] = dict(func=func, prefix=prefix, ast=decompiled,types=types)
+            self.functions[name] = dict(func=func, 
+                                        prefix=prefix,
+                                        ast=decompiled,
+                                        types=types)
+            if self.filter:
+                code = self.handler.compile(decompiled,types,prefix)
+                return self.filter(code, func.__name__)
             return func
         return wrap
     def getcode(self,headers=True,constants=None):
         if constants: self.handler.constants.update(constants)
         defs, funcs = [], []
         for name, info in self.functions.iteritems():
-            code = self.handler.compile(info['ast'],info['types'],info['prefix']) 
+            code = self.handler.compile(info['ast'],
+                                        info['types'],
+                                        info['prefix']) 
             info['code'] = code
             if headers: defs.append(code.split(' {',1)[0]+';')
             funcs.append(code)
-        return '\n\n'.join(defs+funcs)
-
+        return '\n\n'.join(self.handler.macros+defs+funcs)
 
 def test():
-    c99 = Compiler()
+    c99 = Compiler(filter=ezpy)
 
-    @c99('kernel',a='global:ptr_float',b='global:ptr_float')
+    @c99(a='int',b='int')
     def f(a,b):
-        w = new_int(0)
-        c = new_int()
-        x = new_ptr_float(malloc(1000))
+        c = new_int(a)
         for k in range(0,3,1):
-            if k>0 or k<=1 or k is not 1 or k != 1:
-                c = g(1)
-            elif not k==2:
-                c = -a + a+b*b
-            else:
-                c[1+k] = a.y(a)
-        printf('hello "%s"',world)
-        delete(x)
+            if k>0 or k<0 or k>=0 or k<=0 or k is 1 or \
+                    k is not 1 or k==1 or k!=1 and 1==1:
+                c = c+b
         return c
-    return c99.getcode(headers=False)
+    print c99.getcode(headers=True)
+    assert f(1,2) == 7
 
 if __name__ == '__main__':
-    print test()
+    test()
