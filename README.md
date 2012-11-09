@@ -1,11 +1,11 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. This of it as Cython+CLyter+Pyjamas in 300 lines of code. It is based on the Python ast module, and the execellent meta, pyopencl, and ezpyinline libraries.
+mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. Think of it as Cython + CLyter + Pyjamas in 300 lines of code. It is based on the Python ast module, and the execellent meta, pyopencl, and ezpyinline libraries.
 
-The conversion is purely syntatical and assumes the symbols defined are valid in the target.
-It only check for undefined variables used in assignments.
+The conversion is purely syntatical and assumes all used symbols are valid in the target.
+It only check for undefined variables used in assignments. You can only use types which are defined on the target. This means you can use a list or hash table if converting to JS not but if converting to C99 or OpenCL.
 
-Here are some example:
+Examples:
 
 ## Convert Python Code into C99 Code
 
@@ -14,7 +14,7 @@ Here are some example:
     @c99(a='int',b='int')
     def f(a,b):
         c = new_int(a)
-        for k in range(0,n,1):
+        for k in range(n):
             if k<3:
                 c = c+b
         return c
@@ -36,9 +36,9 @@ Output:
         return c;
     }
 
-Notice variables are declared via "new_int" or similar pseudo-function. Use "new_ptr_float" to define a "float*" or "new_ptr_ptr_long" for a "long**", etc. The getcode allows to pass constants defined in the code ("n" in the example).
+Notice variables are declared via "new_int" or similar pseudo-function. Use "new_ptr_float" to define a "float*" or "new_ptr_ptr_long" for a "long**", etc. The getcode allows to pass constants defined in the code ("n" in the example). You must define the types of function arguments in the decorator "c99". The return type is inferred from the type of the object being returned (you must retrun a variable defined within the function or None/void). You can decorate more than one function and get the complete code.
 
-## Convert Python Code into C99 Code and Compile it
+## Convert Python Code into C99 Code and compile it in real time (with ezpyinline)
 
     from mdpcl import Compiler, ezpy
     c99 = Compiler(filter=ezpy)
@@ -51,7 +51,7 @@ Notice variables are declared via "new_int" or similar pseudo-function. Use "new
         return c
     print f(1,2)
 
-The last function runs the C-compiled version of the f function.
+The last function call "f(1,2)" runs the C-compiled version of the f function.
 
 ## Convert Python Code into OpenCL code and run it with PyOpenCL
 
@@ -97,9 +97,12 @@ Output:
         }
     }
 
-A more comlete example that puts this into context can be found in the example_3.py file.
+A more comlete example that puts this code into context and runs it with PyOpenCL
+can be found in the example_3.py file.
 
-## Convert Python Code into Javascript Code (works with jQuery and every other library)
+## Convert Python Code into Javascript Code 
+
+(works with jQuery and every other JS library)
 
     from mdpcl import Compiler, JavaScriptHandler
     js = Compiler(handler=JavaScriptHandler())
