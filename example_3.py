@@ -1,4 +1,4 @@
-from device import Device
+from mdpcl import Device
 from canvas import Canvas
 import random
 import numpy
