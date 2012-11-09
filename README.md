@@ -169,4 +169,4 @@ It uses the meta library to convert python code into an "Abstract Syntax Three".
 
 In the C99 case, if `filter=ezpy`, the target code is also compiled to machine language (using gcc) and the original Python function is replaced by the compiled one. 
 
-OpenCL is code is just C99 code with special type modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices.
+OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the "example_3.py" file.
