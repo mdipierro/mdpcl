@@ -22,7 +22,8 @@ except ImportError:
 try:
     from meta.decompiler import decompile_func
 except ImportError:
-    logging.error('need to install meta')
+    logging.error('must install "meta"')
+    sys.exit(1)
 
 if HAVE_PYOPENCL:
     class Device(object):
@@ -58,10 +59,10 @@ class C99Handler(object):
         while name.startswith('ptr_'):
             stars, name = stars+'*' , name[4:]
         return newname+name+stars
-    def is_list(self,items,pad):
+    def list_expressions(self,items,pad):
         t_items = [self.t(item,pad) for item in items]
         return pad+('\n'+pad).join(t for t in t_items if t.strip())
-    def is_FunctionDef(self,item,types,pad):
+    def is_FunctionDef(self,item,pad,types):
         args = ', '.join('%s %s' % (self.make_type(types[a.id]),a.id) 
                          for a in item.args.args)
         return 'void %s(%s) {\n/*@VARS*/\n%s\n}' % (
@@ -122,6 +123,10 @@ class C99Handler(object):
         return '%s = %s;' % (self.t(item.targets[0]),self.t(right)) if right else ''
     def is_Call(self,item,pad):
         return '%s(%s)' % (self.t(item.func),','.join(self.t(a) for a in item.args))
+    def is_List(self,item,pad):
+        return '{%s}' %  ', '.join(self.t(k,pad) for k in item.elts)
+    def is_Tuple(self,item,pad):
+        return self.is_List(item,pad)
     def is_Num(self,item,pad):
         return self.represent(item.n)
     def is_Str(self,item,pad):
@@ -153,14 +158,14 @@ class C99Handler(object):
             return str(item)
     def __init__(self):
         self.constants = {}
-        self.actions = { list: self.is_list }
+        self.actions = { list: self.list_expressions }
         for key in dir(self):
-            if key.startswith('is_') and key != 'is_list':
+            if key.startswith('is_'):
                 self.actions[getattr(ast,key[3:])] = getattr(self,key)
     def compile(self,item,types,prefix=''):
         self.rettype = None # the return type of the function None is void
         self.symbols = {}
-        code = self.is_FunctionDef(item,types,'')
+        code = self.is_FunctionDef(item,'',types)
         vars = ''.join('%s%s %s;\n' % (self.sep,self.make_type(v),k) 
                        for k,v in self.symbols.items())
         code = code.replace('/*@VARS*/',vars)
@@ -169,6 +174,46 @@ class C99Handler(object):
         return prefix+code.replace('\n\n','\n')
     def t(self,item,pad=''):
         return self.actions[type(item)](item,pad)
+
+class JavaScriptHandler(C99Handler):
+    macros = []
+    @staticmethod
+    def make_type(name):
+        return name
+    def is_List(self,item,pad):
+        return '[%s]' %  ', '.join(self.t(k,pad) for k in item.elts)
+    def is_Dict(self,item,pad):
+        n, ks, vs = len(item.keys), item.keys, item.values
+        return '{%s}' %  ', '.join(self.t(ks[k],pad)+':'+self.t(vs[k],pad) 
+                                   for k in range(n))
+    def is_FunctionDef(self,item,pad):
+        args = ', '.join(a.id for a in item.args.args)
+        return 'var %s = function(%s) {\n%s\n%s}' % (
+            item.name, args, self.t(item.body,pad+self.sep),pad)
+    def is_Assign(self,item,pad):
+        left, right = item.targets[0], item.value
+        if isinstance(left,ast.Name) and not left.id in self.symbols:
+            if isinstance(right,ast.Call) and right.func.id.startswith('new_'):
+                jstype = right.func.id[4:]+' '                
+                right = right.args[0] if right.args else None
+            else:
+                jstype = 'var '
+        return '%s%s = %s;' % (jstype,self.t(item.targets[0]),
+                               self.t(right)) if right else ''
+    def is_Lambda(self,item,pad):
+        args = ', '.join(a.id for a in item.args.args)
+        return 'function (%s) { %s }' % (
+            args, self.t(item.body,pad+self.sep))
+    def __init__(self):
+        C99Handler.__init__(self)
+    def compile(self,item,types,prefix=''):
+        self.rettype = None # the return type of the function None is void
+        self.symbols = {}
+        code = self.is_FunctionDef(item,'')
+        return prefix+code.replace('\n\n','\n')
+    def t(self,item,pad=''):
+        return self.actions[type(item)](item,pad)
+
 
 def ezpy(code,name):
     ezc = ezpyinline.C(code)
@@ -193,7 +238,7 @@ class Compiler(object):
                 return self.filter(code, func.__name__)
             return func
         return wrap
-    def getcode(self,headers=True,constants=None):
+    def getcode(self,headers=False,constants=None,call=False):
         if constants: self.handler.constants.update(constants)
         defs, funcs = [], []
         for name, info in self.functions.iteritems():
@@ -203,11 +248,21 @@ class Compiler(object):
             info['code'] = code
             if headers: defs.append(code.split(' {',1)[0]+';')
             funcs.append(code)
-        return '\n\n'.join(self.handler.macros+defs+funcs)
+        code = '\n\n'.join(self.handler.macros+defs+funcs)
+        if call: code = code+'\n\n%s();' % call
+        return code
 
 def test():
+    if not HAVE_PYOPENCL:
+        logging.error('must install "pyopencl"')
+        sys.exit(1)
+    if not HAVE_EZPYINLINE:
+        logging.error('must install "ezpyinline"')
+        sys.exit(1)
+    print '='*30
+    print 'Example: generate C99 code' 
+    print '='*30
     c99 = Compiler(filter=ezpy)
-
     @c99(a='int',b='int')
     def f(a,b):
         c = new_int(a)
@@ -217,7 +272,32 @@ def test():
                 c = c+b
         return c
     print c99.getcode(headers=True)
+    print 'running the generated C code'
+    print f(1,2)
     assert f(1,2) == 7
+
+    print '\n'+'='*30
+    print 'Example: generate OpenCL code' 
+    print '='*30
+    device = Device()
+    @device.define('kernel', a='global:ptr_float2',b='global:const:ptr_float2')
+    def f(a,b):
+        gid = new_int(get_global_id(0))
+        b[gid].x = a[gid].x
+        b[gid].y = a[gid].y
+    print device.define.getcode(headers=True)
+
+    print '\n'+'='*30
+    print 'Example: generate JS + jQuery code'
+    print '='*30
+    js = Compiler(handler=JavaScriptHandler())
+    @js()
+    def f(a):
+        v = [1,2,'hello']
+        w = {'a':2,'b':4}
+        def g(): alert('hello')
+        jQuery('button').click(lambda: g())
+    print js.getcode(call='f')
 
 if __name__ == '__main__':
     test()
