@@ -1,6 +1,6 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. It implements the core functionalities of Cython + CLyter + Pyjamas in 300 lines of code. It is based on the Python ast module, and the these fantastic libraries:
+mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. It implements from of the functionalities of Cython + CLyter + Pyjamas. mdpcl consists of a single file containing about 300 lines of code. It is based on the Python ast module, and the these fantastic libraries:
 
 - http://pypi.python.org/pypi/meta (always required)
 - http://pypi.python.org/pypi/pyopencl (required for opencl)
