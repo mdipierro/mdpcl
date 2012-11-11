@@ -10,6 +10,6 @@ setup(name='mdpcl',
       license='bsd',
       url='https://github.com/mdipierro/mdpcl',
       scripts = ['mdpcl.py'],
-      packages=['meta'],
+      py_modules = ['meta'],
       )
 
