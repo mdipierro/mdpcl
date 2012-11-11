@@ -24,6 +24,22 @@ __all__ = ['Compiler', 'C99Handler', 'JavaScriptHandler', 'Device']
 
 locker = threading.Lock()
 
+python_version = sys.version_info[0]
+if python_version == 3:
+    def get_arg(item): return item.arg
+    def get_code(func): return func.__code__
+    def map_node(node): return {'TryExcept':'Try'}.get(node,node)
+else:
+    def get_arg(item): return item.id
+    def get_code(func): return func.func_code
+    def map_node(node): return node
+
+C0 = """
+#include "python.h"
+#if PY_MAJOR_VERSION >= 3
+#define IS_PY3K
+#endif
+"""
 C1 = '%s %s; if(!PyArg_ParseTuple(args, "%s", &%s)) return NULL;\n'
 C2 = '{"%(name)s", %(module_name)s_%(name)s, METH_VARARGS},\n'
 C3 = """
@@ -93,7 +109,7 @@ class C99Handler(object):
     substitutions = {'NULL': 'NULL', 'True': '1', 'False': '0'}
 
     def make_types(self, types):
-        for key, value in types.iteritems():
+        for key, value in types.items():
             types[key] = self.make_type(value)
         return types
 
@@ -117,7 +133,8 @@ class C99Handler(object):
         return pad + ('\n' + pad).join(t for t in t_items if t.strip())
 
     def is_FunctionDef(self, item, pad, types):
-        args = ', '.join('%s %s' % (self.make_type(types[a.id]), a.id)
+        args = ', '.join('%s %s' % (
+                    self.make_type(types[get_arg(a)]), get_arg(a))
                          for a in item.args.args)
         return 'void %s(%s) {\n/*@VARS*/\n%s\n}' % (
             item.name, args, self.t(item.body, pad + self.sep))
@@ -309,8 +326,9 @@ class C99Handler(object):
         self.constants = {}
         self.actions = {list: self.list_expressions}
         for key in dir(self):
-            if key.startswith('is_'):
-                self.actions[getattr(ast, key[3:])] = getattr(self, key)
+            if key.startswith('is_'):                
+                node = map_node(key[3:])
+                self.actions[getattr(ast, node)] = getattr(self, key)
 
     def convert(self, item, types, prefix=''):
         self.rettype = None  # the return type of the function None is void
@@ -423,7 +441,7 @@ class Compiler(object):
         if constants:
             self.handler.constants.update(constants)
         defs, funcs = [], []
-        for name, info in self.functions.iteritems():
+        for name, info in self.functions.items():
             code = self.handler.convert(info['ast'],
                                         info['types'],
                                         info['prefix'])
@@ -449,17 +467,18 @@ class Compiler(object):
                      'short': 'h', 'char*': 's', 'PyObject*': 'O'}
         filename = 'mdpcl'
         code = self.convert(headers=True, constants=constants)
-        python_source = '#include "Python.h"\n\n'
+        python_source = C0
         python_source += code
         module_name = 'c' + str(uuid.uuid4()).replace('-', '')
         funcs = ''
-        for key, info in self.functions.iteritems():
+        for key, info in self.functions.items():
             func = info['func']
             name = func.__name__
-            nargs = func.func_code.co_argcount
-            args = ','.join(func.func_code.co_varnames[:nargs])
+            code = get_code(func)
+            nargs = code.co_argcount
+            args = ','.join(code.co_varnames[:nargs])
             parsing_code = ''
-            for k, v in info['types'].iteritems():
+            for k, v in info['types'].items():
                 parsing_code += C1 % (v, k, map_types[v], k)
             funcs += C2 % dict(name=name, module_name=module_name)
             python_source += C3 % dict(module_name=module_name,
@@ -519,7 +538,7 @@ def test_c99():
         d = new_ptr_int(CAST(ptr_int, ADDR(c)))
         c = REFD(d)
         return c
-    print c99.convert(headers=False, constants=dict(n=10))
+    print(c99.convert(headers=False, constants=dict(n=10)))
 
 
 def test_C_compile():
@@ -532,7 +551,7 @@ def test_C_compile():
             output = output * k
         return output
     compiled = c99.compile()
-    print compiled.factorial(10)
+    print(compiled.factorial(10))
     assert compiled.factorial(10) == factorial(10)
 
 def test_OpenCL():
@@ -556,7 +575,7 @@ def test_OpenCL():
             right = new_int(site + 1)
             w[site] = 1.0 / 4 * (u[up] + u[down] + u[left] + u[
                                  right] - q[site])
-    print device.compiler.convert(headers=True, constants=dict(n=300))
+    print(device.compiler.convert(headers=True, constants=dict(n=300)))
 
 
 def test_JS():
@@ -574,7 +593,7 @@ def test_JS():
             except e:
                 alert(e)
         jQuery('button').click(lambda: g())
-    print js.convert(call='f')
+    print(js.convert(call='f'))
 
 if __name__ == '__main__':
     test_c99()
