@@ -4,7 +4,6 @@ mdpcl is a minimalist library that dynamically converts decorated Python code in
 
 - http://pypi.python.org/pypi/meta (always required)
 - http://pypi.python.org/pypi/pyopencl (required for opencl)
-- http://pypi.python.org/pypi/ezpyinline (required for compilation of c99)
 
 The conversion is purely syntatical and assumes all used symbols are valid in the target.
 It only check for undefined variables used in assignments. You can only use types which are defined on the target. This means you can use a list or hash table if converting to JS not but if converting to C99 or OpenCL.
@@ -59,19 +58,18 @@ Notice variables are declared via `new_int` or similar pseudo-function. Use `new
 
 ## Convert Python Code into C99 Code and replace function with compiled one
 
-(requires ezpyinline)
-
-    from mdpcl import Compiler, ezpy
-    c99 = Compiler(filter=ezpy)
+    from mdpcl import Compiler
+    c99 = Compiler()
     @c99(n='int')
     def factorial(n):
         output = new_int(1)
         for k in range(1,n+1):
             output = output*n
         return output
-    print factorial(10)
+    compiled = c99.compile()
+    print compiled.factorial(10)
 
-The last function call `factorial(10)` runs the C-compiled version of the ``factorial`` function.
+The last function call `compiled.factorial(10)` runs the C-compiled version of the ``factorial`` function. `.compiled()` creates and imports a python module containing all the decorated functions (they call each other). It returns a module with the compiled functions, `compiled`.
 
 ## Convert Python Code into OpenCL code and run it with PyOpenCL
 
@@ -167,6 +165,6 @@ Supported control structures include `def`, `if..else`, `for ... range`, `while`
 
 It uses the meta library to convert python code into an "Abstract Syntax Three". It then calls a handler (C99Handler by default or JavaScriptHandler) which converts the AST into the target language.
 
-In the C99 case, if `filter=ezpy`, the target code is also compiled to machine language (using gcc) and the original Python function is replaced by the compiled one. 
+In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned.
 
 OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the "example_3.py" file.

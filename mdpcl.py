@@ -1,10 +1,17 @@
 # Python -> C99, OpenCL, JS converter
 # created by Massimo Di Pierro
 # license: 2-clause BSD
-# requires meta (always), ezpyinline (if filter=ezpy) and numpy+pyopencl (if Device used)
+# requires meta (always) and numpy+pyopencl (if Device used)
 import logging
+import os
 import sys
+import imp
 import ast
+import uuid
+import threading
+import tempfile
+import shutil
+locker = threading.Lock()
 
 try:
     import numpy
@@ -14,17 +21,61 @@ except ImportError:
     HAVE_PYOPENCL = False
 
 try:
-    import ezpyinline
-    HAVE_EZPYINLINE = True
-except ImportError:
-    HAVE_EZPYINLINE = False
-
-try:
     from meta.decompiler import decompile_func
 except ImportError:
     logging.error('must install "meta"')
     sys.exit(1)
 
+C1 = '%s %s; if(!PyArg_ParseTuple(args, "%s", &%s)) return NULL;\n'
+C2 = '{"%(name)s", %(module_name)s_%(name)s, METH_VARARGS},\n'
+C3 = """
+static PyObject * %(module_name)s_%(name)s(PyObject *self, PyObject *args) { 
+  int retval; 
+  %(parsing_code)s
+  retval = %(name)s(%(args)s);
+  return Py_BuildValue("i", retval);
+} """
+C4 = """
+static PyMethodDef __%(name)s__%(module_name)s_Methods[] = {
+  %(funcs)s  {NULL, NULL}
+};
+DL_EXPORT(void) init%(module_name)s(void) {
+  Py_InitModule("%(module_name)s", __%(name)s__%(module_name)s_Methods);
+}
+"""
+
+def distutil_compile_and_import(module_name,code,build_dir=None):
+    from distutils.core import setup, Extension
+    from distutils.util import get_platform
+    if not build_dir:
+        build_dir = tempfile.mkdtemp()
+    file_name = os.path.join(build_dir,module_name+'.c')
+    open(file_name,'w').write(code)
+    home_dir = os.getcwd()
+    os.chdir(build_dir)
+    extension = Extension(module_name, [module_name+'.c'])
+    try:
+        locker.acquire()
+        setup(name = module_name,
+              version = '0.1',
+              ext_modules = [extension],
+              script_args = ["-q","build"],
+              script_name="C.py",
+              package_dir=build_dir)
+    finally:
+        os.unlink(file_name)
+        os.chdir(home_dir)
+        locker.release()
+    lib = "lib.%s-%s" % (get_platform(), sys.version[0:3])
+    sys.path.append(os.path.join(build_dir, 'build', lib))
+    try:
+        fp, pathname, description = imp.find_module(module_name)
+        module = imp.load_module(module_name, fp, pathname, description)
+    finally:
+        shutil.rmtree(build_dir)
+        if fp:
+            fp.close()
+    return module
 
 class C99Handler(object):
     sep = ' ' * 4
@@ -34,7 +85,12 @@ class C99Handler(object):
         'CAST':lambda args: '(%s)(%s)' % (C99Handler.make_type(args[0]), args[1])
         }
     substitutions = {'NULL':'NULL', 'True':'1', 'False':'0'}
-    
+
+    def make_types(self, types):
+        for key, value in types.iteritems():
+            types[key] = self.make_type(value)
+        return types
+
     @staticmethod
     def make_type(name):
         newname = stars = ''
@@ -44,6 +100,8 @@ class C99Handler(object):
             newname, name = newname + '__local ', name[6:]
         if name.startswith('const:'):
             newname, name = newname + 'const ', name[6:]
+        if name.startswith('usigned'):
+            newname, name = newname + 'unsigned ', name[6:]
         while name.startswith('ptr_'):
             stars, name = stars + '*', name[4:]
         return newname + name + stars
@@ -163,19 +221,21 @@ class C99Handler(object):
             raise NotImplementedError
         left, right = item.targets[0], item.value
         if isinstance(left, ast.Name) and not left.id in self.symbols:
-            if isinstance(right, ast.Call) and right.func.id.startswith('new_'):
+            if isinstance(right, ast.Call) and \
+                    right.func.id.startswith('new_'):
                 self.symbols[left.id] = right.func.id[4:]
                 right = right.args[0] if right.args else None
             else:
                 raise RuntimeError('unkown C-type %s' % left.id)
-        return '%s = %s;' % (self.t(item.targets[0]), self.t(right)) if right else ''
+        return '%s = %s;' % (
+            self.t(item.targets[0]), self.t(right)) if right else ''
 
     def is_Call(self, item, pad):
         func = self.t(item.func)
         args = [self.t(a) for a in item.args]
         if func in self.special_functions:
             return self.special_functions[func](args)
-        return '%s(%s)' % (func,args)
+        return '%s(%s)' % (func,','.join(args))
 
     def is_List(self, item, pad):
         return '{%s}' % ', '.join(self.t(k, pad) for k in item.elts)
@@ -238,11 +298,11 @@ class C99Handler(object):
             if key.startswith('is_'):
                 self.actions[getattr(ast, key[3:])] = getattr(self, key)
 
-    def compile(self, item, types, prefix=''):
+    def convert(self, item, types, prefix=''):
         self.rettype = None  # the return type of the function None is void
         self.symbols = {}
         code = self.is_FunctionDef(item, '', types)
-        vars = ''.join('%s%s %s;\n' % (self.sep, self.make_type(v), k)
+        vars = ''.join('%s%s %s;\n' % (self.sep, v, k)
                        for k, v in self.symbols.items())
         code = code.replace('/*@VARS*/', vars)
         if self.rettype is not None:
@@ -258,7 +318,7 @@ class JavaScriptHandler(C99Handler):
     substitutions = {'NULL':'null', 'True':'true', 'False':'false'}
 
     @staticmethod
-    def make_type(name):
+    def make_type(self, name):
         return name
 
     def is_List(self, item, pad):
@@ -305,7 +365,7 @@ class JavaScriptHandler(C99Handler):
     def __init__(self):
         C99Handler.__init__(self)
 
-    def compile(self, item, types, prefix=''):
+    def convert(self, item, types, prefix=''):
         self.rettype = None  # the return type of the function None is void
         self.symbols = {}
         code = self.is_FunctionDef(item, '')
@@ -315,21 +375,15 @@ class JavaScriptHandler(C99Handler):
         return self.actions[type(item)](item, pad)
 
 
-def ezpy(code, name):
-    ezc = ezpyinline.C(code)
-    return getattr(ezc, name)
-
-
 class Compiler(object):
-    def __init__(self, handler=C99Handler(), filter=None):
+    def __init__(self, handler=None):        
         self.functions = {}
-        self.handler = handler
-        self.filter = filter
+        self.handler = handler or C99Handler()
 
     def __call__(self, prefix='', name=None, **types):
         if prefix == 'kernel':
             prefix = '__kernel '
-
+        types = self.handler.make_types(types)
         def wrap(func, types=types, name=name, prefix=prefix):
             if name is None:
                 name = func.__name__
@@ -337,10 +391,8 @@ class Compiler(object):
             self.functions[name] = dict(func=func,
                                         prefix=prefix,
                                         ast=decompiled,
-                                        types=types)
-            if self.filter:
-                code = self.handler.compile(decompiled, types, prefix)
-                return self.filter(code, func.__name__)
+                                        types=types,
+                                        code=None)
             return func
         return wrap
 
@@ -349,7 +401,7 @@ class Compiler(object):
             self.handler.constants.update(constants)
         defs, funcs = [], []
         for name, info in self.functions.iteritems():
-            code = self.handler.compile(info['ast'],
+            code = self.handler.convert(info['ast'],
                                         info['types'],
                                         info['prefix'])
             info['code'] = code
@@ -360,6 +412,38 @@ class Compiler(object):
         if call:
             code = code + '\n\n%s();' % call
         return code
+    
+    def compile(self, constants=None):
+        map_types = { 'unsigned': 'i', 'unsigned int': 'i', 'int': 'i',
+                      'long': 'l', 'float': 'f', 'double': 'd', 'char': 'c',
+                      'short': 'h', 'char*': 's', 'PyObject*': 'O'}
+        filename = 'mdpcl'
+        code = self.getcode(headers=True, constants=constants)
+        python_source = '#include "Python.h"\n\n'
+        python_source += code
+        module_name = 'c'+str(uuid.uuid4()).replace('-','')
+        funcs = ''
+        for key, info in self.functions.iteritems():
+            func = info['func']
+            name = func.__name__
+            nargs = func.func_code.co_argcount
+            args = ','.join(func.func_code.co_varnames[:nargs])
+            parsing_code = ''
+            for k, v in info['types'].iteritems():
+                parsing_code += C1 % (v, k, map_types[v], k)            
+            funcs += C2 % dict(name=name, module_name=module_name) 
+            python_source += C3 % dict(module_name=module_name,
+                                       filename=filename, 
+                                       name=name, args=args,
+                                       parsing_code=parsing_code)
+        python_source += C4 % dict(module_name=module_name,
+                                   filename=filename,
+                                   name=name, args=args,
+                                   parsing_code=parsing_code,
+                                   funcs=funcs)
+        module = distutil_compile_and_import(module_name, python_source)        
+        return module
+
 
 if HAVE_PYOPENCL:
     class Device(object):
@@ -381,7 +465,7 @@ if HAVE_PYOPENCL:
             pyopencl.enqueue_copy(self.queue, output, buffer)
             return output
 
-        def compile(self, kernel):
+        def convert(self, kernel):
             return pyopencl.Program(self.ctx, kernel).build()
 
 
@@ -403,18 +487,16 @@ def test_c99():
         return c
     print c99.getcode(headers=False, constants=dict(n=10))
 
-def test_EZPY():
-    if not HAVE_EZPYINLINE:
-        logging.error('must install "ezpyinline"')
-        sys.exit(1)
-    c99 = Compiler(filter=ezpy)    
+def test_C_compile():
+    c99 = Compiler()    
     @c99(n='int')
     def factorial(n):
         output = new_int(1)
         for k in range(1,n+1):
-            output = output*n
+            output = output*k
         return output
-    print factorial(10)
+    compiled = c99.compile()
+    print compiled.factorial(10)
 
 def test_OpenCL():
     if not HAVE_PYOPENCL:
@@ -455,6 +537,6 @@ def test_JS():
 
 if __name__ == '__main__':
     test_c99()
-    test_EZPY()
+    test_C_compile()
     test_OpenCL()
     test_JS()
