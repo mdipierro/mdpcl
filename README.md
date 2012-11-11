@@ -1,6 +1,6 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python functions into C99, OpenCL, or JavaScript. In the C99 casem it also uses distutils to compile the functions to machine language and allow you to run the compiled ones instead of the interpreted ones. In the OpenCL case you can run the compiled ones using pyOpenCL.
+mdpcl is a minimalist library that dynamically (at run time) converts decorated Python functions into C99, OpenCL, or JavaScript. In the C99 case, it also uses distutils to compile the functions to machine language and allow you to run the compiled ones instead of the interpreted ones. In the OpenCL case you can run the compiled ones using pyOpenCL.
 
 It consists of a single pure-Python file containing about 600 lines of code. Some of the mdpcl functionalities overlap with Cython, CLyter, and Pyjamas. 
 
