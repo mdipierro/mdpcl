@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='mdpcl',
-      version='0.3',
+      version='0.4',
       description='decorators to compile Python code to C99, OpenCL, and JS',
       author='Massimo Di Pierro',
       author_email='massimo.dipierro@gmail.com',
