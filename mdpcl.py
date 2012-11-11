@@ -24,15 +24,29 @@ __all__ = ['Compiler', 'C99Handler', 'JavaScriptHandler', 'Device']
 
 locker = threading.Lock()
 
+# handle differences between Python 2na and Python 3
+
 python_version = sys.version_info[0]
 if python_version == 3:
-    def get_arg(item): return item.arg
-    def get_code(func): return func.__code__
-    def map_node(node): return {'TryExcept':'Try'}.get(node,node)
+    def get_arg(item):
+        return item.arg
+
+    def get_code(func):
+        return func.__code__
+
+    def map_node(node):
+        return {'TryExcept': 'Try'}.get(node, node)
 else:
-    def get_arg(item): return item.id
-    def get_code(func): return func.func_code
-    def map_node(node): return node
+    def get_arg(item):
+        return item.id
+
+    def get_code(func):
+        return func.func_code
+
+    def map_node(node):
+        return node
+
+# define useful constants
 
 C0 = """
 #include "python.h"
@@ -57,6 +71,21 @@ DL_EXPORT(void) init%(module_name)s(void) {
   Py_InitModule("%(module_name)s", __%(name)s__%(module_name)s_Methods);
 }
 """
+
+MAP_TYPES = {
+    'unsigned': 'i',
+    'unsigned int': 'i',
+    'int': 'i',
+    'long': 'l',
+    'float': 'f',
+    'double': 'd',
+    'char': 'c',
+    'short': 'h',
+    'char*': 's',
+    'PyObject*': 'O'
+    }
+
+# logic to dynamically create a C-module from C-code
 
 def distutil_compile_and_import(module_name, code, build_dir=None):
     from distutils.core import setup, Extension
@@ -86,7 +115,7 @@ def distutil_compile_and_import(module_name, code, build_dir=None):
         locker.release()
 
     # import and return the module
-    lib = "lib.%s-%s" % (get_platform(), sys.version[0:3])    
+    lib = "lib.%s-%s" % (get_platform(), sys.version[0:3])
     sys.path.append(os.path.join(build_dir, 'build', lib))
     try:
         fp, pathname, description = imp.find_module(module_name)
@@ -97,6 +126,7 @@ def distutil_compile_and_import(module_name, code, build_dir=None):
             fp.close()
     return module
 
+# the C99 handler converts AST to C99 code
 
 class C99Handler(object):
 
@@ -104,7 +134,8 @@ class C99Handler(object):
     special_functions = {
         'REFD': lambda args: '(*(%s))' % ', '.join(args),
         'ADDR': lambda args: '(&(%s))' % ', '.join(args),
-        'CAST': lambda args: '(%s)(%s)' % (C99Handler.make_type(args[0]), args[1])
+        'CAST': lambda args: '(%s)(%s)' % (
+            C99Handler.make_type(args[0]), args[1])
     }
     substitutions = {'NULL': 'NULL', 'True': '1', 'False': '0'}
 
@@ -134,8 +165,8 @@ class C99Handler(object):
 
     def is_FunctionDef(self, item, pad, types):
         args = ', '.join('%s %s' % (
-                    self.make_type(types[get_arg(a)]), get_arg(a))
-                         for a in item.args.args)
+            self.make_type(types[get_arg(a)]), get_arg(a))
+            for a in item.args.args)
         return 'void %s(%s) {\n/*@VARS*/\n%s\n}' % (
             item.name, args, self.t(item.body, pad + self.sep))
 
@@ -178,11 +209,12 @@ class C99Handler(object):
                 args[0], pad), self.t(args[1], pad), self.t(args[2], pad)
         else:
             raise NotImplementedError
-        if isinstance(item.target, ast.Name) and not item.target.id in self.symbols:
+        if isinstance(item.target, ast.Name) and \
+                not item.target.id in self.symbols:
             self.symbols[item.target.id] = 'long'
-        return 'for (%(n)s=%(a)s; %(n)s<%(b)s; %(n)s+=%(c)s) {\n%(d)s\n%(p)s}' % dict(
-            n=self.t(item.target), a=start, b=stop, c=incr,
-            d=self.t(item.body, pad + self.sep), p=pad)
+        return 'for (%(n)s=%(a)s; %(n)s<%(b)s; %(n)s+=%(c)s) {\n%(d)s\n%(p)s}'\
+            % dict(n=self.t(item.target), a=start, b=stop, c=incr,
+                   d=self.t(item.body, pad + self.sep), p=pad)
 
     def is_If(self, item, pad):
         code = 'if (%(c)s) {\n%(b)s\n%(p)s}' % dict(
@@ -250,11 +282,11 @@ class C99Handler(object):
                 right = right.args[0] if right.args else None
             else:
                 # guess type
-                if isinstance(right,ast.Num) and isinstance(right.n,float):
+                if isinstance(right, ast.Num) and isinstance(right.n, float):
                     self.symbols[left.id] = 'float'
-                elif isinstance(right,ast.Num) and isinstance(right.n,int):
+                elif isinstance(right, ast.Num) and isinstance(right.n, int):
                     self.symbols[left.id] = 'int'
-                elif isinstance(right,ast.Str):
+                elif isinstance(right, ast.Str):
                     self.symbols[left.id] = 'ptr_char'
                 else:
                     raise RuntimeError('unkown C-type %s' % left.id)
@@ -284,7 +316,8 @@ class C99Handler(object):
         return '(%s %s)' % (self.t(item.op), self.t(item.operand))
 
     def is_BinOp(self, item, pad):
-        return '(%s %s %s)' % (self.t(item.left), self.t(item.op), self.t(item.right))
+        return '(%s %s %s)' % (
+            self.t(item.left), self.t(item.op), self.t(item.right))
 
     def is_USub(self, item, pad):
         return '-'
@@ -326,7 +359,7 @@ class C99Handler(object):
         self.constants = {}
         self.actions = {list: self.list_expressions}
         for key in dir(self):
-            if key.startswith('is_'):                
+            if key.startswith('is_'):
                 node = map_node(key[3:])
                 self.actions[getattr(ast, node)] = getattr(self, key)
 
@@ -344,6 +377,7 @@ class C99Handler(object):
     def t(self, item, pad=''):
         return self.actions[type(item)](item, pad)
 
+# the JavaScriptHandler converts AST to JavaScript code
 
 class JavaScriptHandler(C99Handler):
 
@@ -359,8 +393,8 @@ class JavaScriptHandler(C99Handler):
 
     def is_Dict(self, item, pad):
         n, ks, vs = len(item.keys), item.keys, item.values
-        return '{%s}' % ', '.join(self.t(ks[k], pad) + ':' + self.t(vs[k], pad)
-                                  for k in range(n))
+        return '{%s}' % ', '.join(
+            self.t(ks[k], pad) + ':' + self.t(vs[k], pad) for k in range(n))
 
     def is_TryExcept(self, item, pad):
         code = 'try {\n%(b)s\n%(p)s}' % dict(
@@ -369,7 +403,8 @@ class JavaScriptHandler(C99Handler):
             raise NotImplementedError
         handler = item.handlers[0]
         code += ' catch(%(n)s) {\n%(e)s\n%(p)s}' % dict(
-            n=self.t(handler.type, pad), e=self.t(handler.body, pad + self.sep), p=pad)
+            n=self.t(handler.type, pad),
+            e=self.t(handler.body, pad + self.sep), p=pad)
         return code
 
     def is_FunctionDef(self, item, pad):
@@ -382,7 +417,8 @@ class JavaScriptHandler(C99Handler):
             raise NotImplementedError
         left, right = item.targets[0], item.value
         if isinstance(left, ast.Name) and not left.id in self.symbols:
-            if isinstance(right, ast.Call) and right.func.id.startswith('new_'):
+            if isinstance(right, ast.Call) and \
+                    right.func.id.startswith('new_'):
                 jstype = right.func.id[4:] + ' '
                 right = right.args[0] if right.args else None
             else:
@@ -407,6 +443,7 @@ class JavaScriptHandler(C99Handler):
     def t(self, item, pad=''):
         return self.actions[type(item)](item, pad)
 
+# the class Compiler defines the decorator
 
 class Compiler(object):
 
@@ -462,9 +499,6 @@ class Compiler(object):
         """
         if self.handler.__class__ != C99Handler:
             raise NotImplementedError("Required a C99Handler")
-        map_types = {'unsigned': 'i', 'unsigned int': 'i', 'int': 'i',
-                     'long': 'l', 'float': 'f', 'double': 'd', 'char': 'c',
-                     'short': 'h', 'char*': 's', 'PyObject*': 'O'}
         filename = 'mdpcl'
         code = self.convert(headers=True, constants=constants)
         python_source = C0
@@ -479,7 +513,7 @@ class Compiler(object):
             args = ','.join(code.co_varnames[:nargs])
             parsing_code = ''
             for k, v in info['types'].items():
-                parsing_code += C1 % (v, k, map_types[v], k)
+                parsing_code += C1 % (v, k, MAP_TYPES[v], k)
             funcs += C2 % dict(name=name, module_name=module_name)
             python_source += C3 % dict(module_name=module_name,
                                        filename=filename,
@@ -493,6 +527,7 @@ class Compiler(object):
         module = distutil_compile_and_import(module_name, python_source)
         return module
 
+# only for open, this is the main interface to the device
 
 if HAVE_PYOPENCL:
     class Device(object):
@@ -504,7 +539,8 @@ if HAVE_PYOPENCL:
             self.queue = pyopencl.CommandQueue(self.ctx)
             self.compiler = Compiler()
 
-        def buffer(self, source=None, size=0, mode=pyopencl.mem_flags.READ_WRITE):
+        def buffer(self, source=None, size=0,
+                   mode=pyopencl.mem_flags.READ_WRITE):
             if source is not None:
                 mode = mode | pyopencl.mem_flags.COPY_HOST_PTR
             buffer = pyopencl.Buffer(self.ctx, mode, size=size, hostbuf=source)
@@ -520,6 +556,8 @@ if HAVE_PYOPENCL:
                 kernel = self.compiler.convert(constants=constants)
             return pyopencl.Program(self.ctx, kernel).build()
 
+
+# some tests/examples
 
 def test_c99():
     c99 = Compiler()
@@ -553,6 +591,7 @@ def test_C_compile():
     compiled = c99.compile()
     print(compiled.factorial(10))
     assert compiled.factorial(10) == factorial(10)
+
 
 def test_OpenCL():
     if not HAVE_PYOPENCL:
