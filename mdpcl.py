@@ -11,7 +11,7 @@ import uuid
 import threading
 import tempfile
 import shutil
-locker = threading.Lock()
+from meta.decompiler import decompile_func
 
 try:
     import numpy
@@ -20,17 +20,15 @@ try:
 except ImportError:
     HAVE_PYOPENCL = False
 
-try:
-    from meta.decompiler import decompile_func
-except ImportError:
-    logging.error('must install "meta"')
-    sys.exit(1)
+__all__ = ['Compiler', 'C99Handler', 'JavaScriptHandler', 'Device']
+
+locker = threading.Lock()
 
 C1 = '%s %s; if(!PyArg_ParseTuple(args, "%s", &%s)) return NULL;\n'
 C2 = '{"%(name)s", %(module_name)s_%(name)s, METH_VARARGS},\n'
 C3 = """
-static PyObject * %(module_name)s_%(name)s(PyObject *self, PyObject *args) { 
-  int retval; 
+static PyObject * %(module_name)s_%(name)s(PyObject *self, PyObject *args) {
+  int retval;
   %(parsing_code)s
   retval = %(name)s(%(args)s);
   return Py_BuildValue("i", retval);
@@ -44,29 +42,35 @@ DL_EXPORT(void) init%(module_name)s(void) {
 }
 """
 
-def distutil_compile_and_import(module_name,code,build_dir=None):
+def distutil_compile_and_import(module_name, code, build_dir=None):
     from distutils.core import setup, Extension
     from distutils.util import get_platform
     if not build_dir:
         build_dir = tempfile.mkdtemp()
-    file_name = os.path.join(build_dir,module_name+'.c')
-    open(file_name,'w').write(code)
+
+    # write code to file
+    file_name = os.path.join(build_dir, module_name + '.c')
+    open(file_name, 'w').write(code)
     home_dir = os.getcwd()
+
+    # turn file into module
     os.chdir(build_dir)
-    extension = Extension(module_name, [module_name+'.c'])
+    extension = Extension(module_name, [module_name + '.c'])
     try:
         locker.acquire()
-        setup(name = module_name,
-              version = '0.1',
-              ext_modules = [extension],
-              script_args = ["-q","build"],
+        setup(name=module_name,
+              version='0.1',
+              ext_modules=[extension],
+              script_args=["-q", "build"],
               script_name="C.py",
               package_dir=build_dir)
     finally:
         os.unlink(file_name)
         os.chdir(home_dir)
         locker.release()
-    lib = "lib.%s-%s" % (get_platform(), sys.version[0:3])
+
+    # import and return the module
+    lib = "lib.%s-%s" % (get_platform(), sys.version[0:3])    
     sys.path.append(os.path.join(build_dir, 'build', lib))
     try:
         fp, pathname, description = imp.find_module(module_name)
@@ -77,14 +81,15 @@ def distutil_compile_and_import(module_name,code,build_dir=None):
             fp.close()
     return module
 
+
 class C99Handler(object):
     sep = ' ' * 4
     special_functions = {
-        'REFD':lambda args: '(*(%s))' % ', '.join(args), 
-        'ADDR':lambda args: '(&(%s))' % ', '.join(args),
-        'CAST':lambda args: '(%s)(%s)' % (C99Handler.make_type(args[0]), args[1])
-        }
-    substitutions = {'NULL':'NULL', 'True':'1', 'False':'0'}
+        'REFD': lambda args: '(*(%s))' % ', '.join(args),
+        'ADDR': lambda args: '(&(%s))' % ', '.join(args),
+        'CAST': lambda args: '(%s)(%s)' % (C99Handler.make_type(args[0]), args[1])
+    }
+    substitutions = {'NULL': 'NULL', 'True': '1', 'False': '0'}
 
     def make_types(self, types):
         for key, value in types.iteritems():
@@ -127,13 +132,13 @@ class C99Handler(object):
 
     def is_TryExcept(self, item, pad):
         raise NotImplementedError
-        
+
     def is_Break(self, item, pad):
         return 'break;'
-    
+
     def is_Continue(self, item, pad):
         return 'continue;'
-    
+
     def is_While(self, item, pad):
         if item.orelse:
             raise NotImplementedError
@@ -235,7 +240,7 @@ class C99Handler(object):
         args = [self.t(a) for a in item.args]
         if func in self.special_functions:
             return self.special_functions[func](args)
-        return '%s(%s)' % (func,','.join(args))
+        return '%s(%s)' % (func, ','.join(args))
 
     def is_List(self, item, pad):
         return '{%s}' % ', '.join(self.t(k, pad) for k in item.elts)
@@ -315,7 +320,7 @@ class C99Handler(object):
 
 class JavaScriptHandler(C99Handler):
     special_functions = {'new': lambda args: 'new %s' % ', '.join(args)}
-    substitutions = {'NULL':'null', 'True':'true', 'False':'false'}
+    substitutions = {'NULL': 'null', 'True': 'true', 'False': 'false'}
 
     @staticmethod
     def make_type(self, name):
@@ -376,7 +381,7 @@ class JavaScriptHandler(C99Handler):
 
 
 class Compiler(object):
-    def __init__(self, handler=None):        
+    def __init__(self, handler=None):
         self.functions = {}
         self.handler = handler or C99Handler()
 
@@ -384,6 +389,7 @@ class Compiler(object):
         if prefix == 'kernel':
             prefix = '__kernel '
         types = self.handler.make_types(types)
+
         def wrap(func, types=types, name=name, prefix=prefix):
             if name is None:
                 name = func.__name__
@@ -397,6 +403,12 @@ class Compiler(object):
         return wrap
 
     def getcode(self, headers=False, constants=None, call=False):
+        """
+        Returns all decorated Python code converted to target language
+        constants is a dict() of constants to be used in convesion
+        headers = True creates the headers (in c99 case only)
+        call = 'f' calls the function f (for JS only)
+        """
         if constants:
             self.handler.constants.update(constants)
         defs, funcs = [], []
@@ -412,16 +424,21 @@ class Compiler(object):
         if call:
             code = code + '\n\n%s();' % call
         return code
-    
+
     def compile(self, constants=None):
-        map_types = { 'unsigned': 'i', 'unsigned int': 'i', 'int': 'i',
-                      'long': 'l', 'float': 'f', 'double': 'd', 'char': 'c',
-                      'short': 'h', 'char*': 's', 'PyObject*': 'O'}
+        """
+        Compiles all decotared code and returns an
+        returns modules conatining compiled versions of those functions
+        Attention: this function performs a temporary change of directory
+        """
+        map_types = {'unsigned': 'i', 'unsigned int': 'i', 'int': 'i',
+                     'long': 'l', 'float': 'f', 'double': 'd', 'char': 'c',
+                     'short': 'h', 'char*': 's', 'PyObject*': 'O'}
         filename = 'mdpcl'
         code = self.getcode(headers=True, constants=constants)
         python_source = '#include "Python.h"\n\n'
         python_source += code
-        module_name = 'c'+str(uuid.uuid4()).replace('-','')
+        module_name = 'c' + str(uuid.uuid4()).replace('-', '')
         funcs = ''
         for key, info in self.functions.iteritems():
             func = info['func']
@@ -430,10 +447,10 @@ class Compiler(object):
             args = ','.join(func.func_code.co_varnames[:nargs])
             parsing_code = ''
             for k, v in info['types'].iteritems():
-                parsing_code += C1 % (v, k, map_types[v], k)            
-            funcs += C2 % dict(name=name, module_name=module_name) 
+                parsing_code += C1 % (v, k, map_types[v], k)
+            funcs += C2 % dict(name=name, module_name=module_name)
             python_source += C3 % dict(module_name=module_name,
-                                       filename=filename, 
+                                       filename=filename,
                                        name=name, args=args,
                                        parsing_code=parsing_code)
         python_source += C4 % dict(module_name=module_name,
@@ -441,7 +458,7 @@ class Compiler(object):
                                    name=name, args=args,
                                    parsing_code=parsing_code,
                                    funcs=funcs)
-        module = distutil_compile_and_import(module_name, python_source)        
+        module = distutil_compile_and_import(module_name, python_source)
         return module
 
 
@@ -465,65 +482,73 @@ if HAVE_PYOPENCL:
             pyopencl.enqueue_copy(self.queue, output, buffer)
             return output
 
-        def convert(self, kernel):
+        def compile(self, kernel):
             return pyopencl.Program(self.ctx, kernel).build()
 
 
 def test_c99():
     c99 = Compiler()
+
     @c99(a='int', b='int')
     def f(a, b):
         for k in range(n):
             while True:
                 break
-            if k==0 or k!=0 or k<0 or k>0 or not k==0 or \
-               k>=0 or k<=0 or k is None or k is not None:                    
+            if k == 0 or k != 0 or k < 0 or k > 0 or not k == 0 or \
+                    k >= 0 or k <= 0 or k is None or k is not None:
                 continue
-        c = new_int(a+b)
+        c = new_int(a + b)
         printf("%i + %i = %i", a, b, c)
 
-        d = new_ptr_int(CAST(ptr_int,ADDR(c)))
-        c = REFD(d)        
+        d = new_ptr_int(CAST(ptr_int, ADDR(c)))
+        c = REFD(d)
         return c
     print c99.getcode(headers=False, constants=dict(n=10))
 
+
 def test_C_compile():
-    c99 = Compiler()    
+    c99 = Compiler()
+
     @c99(n='int')
     def factorial(n):
         output = new_int(1)
-        for k in range(1,n+1):
-            output = output*k
+        for k in range(1, n + 1):
+            output = output * k
         return output
     compiled = c99.compile()
     print compiled.factorial(10)
+
 
 def test_OpenCL():
     if not HAVE_PYOPENCL:
         logging.error('must install "pyopencl"')
         sys.exit(1)
     device = Device()
+
     @device.define('kernel',
-               w='global:ptr_float',
-               u='global:const:ptr_float',
-               q='global:const:ptr_float')
-    def solve(w,u,q):
+                   w='global:ptr_float',
+                   u='global:const:ptr_float',
+                   q='global:const:ptr_float')
+    def solve(w, u, q):
         x = new_int(get_global_id(0))
         y = new_int(get_global_id(1))
-        site = new_int(x*n+y)
-        if y!=0 and y!=n-1 and x!=0 and x!=n-1:
-            up = new_int(site-n)
-            down = new_int(site+n)
-            left = new_int(site-1)
-            right = new_int(site+1)
-            w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
+        site = new_int(x * n + y)
+        if y != 0 and y != n - 1 and x != 0 and x != n - 1:
+            up = new_int(site - n)
+            down = new_int(site + n)
+            left = new_int(site - 1)
+            right = new_int(site + 1)
+            w[site] = 1.0 / 4 * (u[up] + u[down] + u[left] + u[
+                                 right] - q[site])
     print device.define.getcode(headers=True, constants=dict(n=300))
+
 
 def test_JS():
     js = Compiler(handler=JavaScriptHandler())
+
     @js()
     def f(a):
-        a = new(array(1,2,3,4))
+        a = new(array(1, 2, 3, 4))
         v = [1, 2, 'hello']
         w = {'a': 2, 'b': 4}
 
