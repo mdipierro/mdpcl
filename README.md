@@ -171,4 +171,4 @@ It uses the meta library to convert python code into an "Abstract Syntax Three".
 
 In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned. A more complex of a C implementation of Black-Scholes solver can be found in `example_black_scholes.py`.
 
-OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the `example_laplace_opencl.py` file.
+OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example is in the `example_laplace_opencl.py` file.
