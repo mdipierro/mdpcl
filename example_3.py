@@ -31,7 +31,7 @@ def solve(w,u,q):
         right = new_int(site+1)
         w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
 
-program = device.compile(device.compiler.convert(constants=dict(n=n)))
+program = device.compile(constants=dict(n=n))
 
 for k in range(3000):
     program.solve(device.queue, [n,n], None, w_buffer, u_buffer, q_buffer)

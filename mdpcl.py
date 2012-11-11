@@ -488,7 +488,9 @@ if HAVE_PYOPENCL:
             pyopencl.enqueue_copy(self.queue, output, buffer)
             return output
 
-        def compile(self, kernel):
+        def compile(self, kernel=None, constants=None):
+            if not kernel:
+                kernel = self.compiler.convert(constants=constants)
             return pyopencl.Program(self.ctx, kernel).build()
 
 
