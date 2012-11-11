@@ -16,10 +16,10 @@ q_buffer = device.buffer(source=q, mode=device.flags.READ_ONLY)
 u_buffer = device.buffer(source=u)
 w_buffer = device.buffer(source=w)
 
-@device.define('kernel',
-               w='global:ptr_float',
-               u='global:const:ptr_float',
-               q='global:const:ptr_float')
+@device.compiler('kernel',
+                 w='global:ptr_float',
+                 u='global:const:ptr_float',
+                 q='global:const:ptr_float')
 def solve(w,u,q):
     x = new_int(get_global_id(0))
     y = new_int(get_global_id(1))
@@ -31,7 +31,7 @@ def solve(w,u,q):
         right = new_int(site+1)
         w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
 
-program = device.compile(device.define.getcode(constants=dict(n=n)))
+program = device.compile(device.compiler.convert(constants=dict(n=n)))
 
 for k in range(3000):
     program.solve(device.queue, [n,n], None, w_buffer, u_buffer, q_buffer)

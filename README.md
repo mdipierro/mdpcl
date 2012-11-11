@@ -1,14 +1,15 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. mdpcl consists of a single file containing about 300 lines of code. Some of the mdpcl functionalities overlap with Cython, CLyter, and Pyjamas. 
+mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript.
 
-mdpcl is based on the Python ast module, and the these fantastic libraries:
+It consists of a single pure-Python file containing about 600 lines of code. Some of the mdpcl functionalities overlap with Cython, CLyter, and Pyjamas. 
+
+It is based on the Python ast module, and the these fantastic libraries:
 
 - http://pypi.python.org/pypi/meta (always required)
 - http://pypi.python.org/pypi/pyopencl (required only to run opencl code)
 
-The conversion is purely syntatical and assumes all used symbols are valid in the target.
-It only check for undefined variables used in assignments. You can only use types which are defined on the target. This means you can use a list or hash table if converting to JS not but if converting to C99 or OpenCL.
+The conversion is purely syntatical and assumes all symbols used in the code are defined on the target. It only check for undefined variables used in assignments. You can only use types which are defined on the target. This means you can use a list or hash table if converting to JS not but if converting to C99 or OpenCL. Functions can only return local variables.
 
 Examples:
 
@@ -30,7 +31,7 @@ Examples:
         d = new_ptr_int(CAST(prt_int,ADDR(c)))
         c = REFD(d)
         return c
-    print c99.getcode(headers=False, constants=dict(n=10))
+    print c99.convert(headers=False, constants=dict(n=10))
 
 Output:
     
@@ -54,9 +55,9 @@ Output:
         return c;
     }
 
-Notice variables are declared via `new_int` or similar pseudo-function. Use `new_ptr_float` to define a `float*` or `new_ptr_ptr_long` for a `long**`, etc. The getcode allows to pass `constants` defined in the code (`n` in the example). You must define the types of function arguments in the decorator "c99". The return type is inferred from the type of the object being returned (you must retrun a variable defined within the function or ``None`` for void). You can decorate more than one function and get the complete code.
+Notice variables are declared via `new_int` or similar pseudo-function. Use `new_ptr_float` to define a `float*` or `new_ptr_ptr_long` for a `long**`, etc. The convert allows to pass `constants` defined in the code (`n` in the example). You must define the types of function arguments in the decorator "c99". The return type is inferred from the type of the object being returned (you must retrun a variable defined within the function or ``None`` for void). You can decorate more than one function and get the complete code.
 
-`new_<type>`, `range`, `ADDR` (address of), `REFD` (obj referenced by), `CAST`, `True`, `False` are keywords.
+`new_<type>`, `range`, `ADDR` (address of), `REFD` (obj referenced by), `CAST`, `True`, `False`, and `None` are keywords.
 
 ## Convert Python Code into C99 Code and replace function with compiled one
 
@@ -71,7 +72,7 @@ Notice variables are declared via `new_int` or similar pseudo-function. Use `new
     compiled = c99.compile()
     print compiled.factorial(10)
 
-The last function call `compiled.factorial(10)` runs the C-compiled version of the ``factorial`` function. `.compiled()` creates and imports a python module containing all the decorated functions (they call each other). It returns a module with the compiled functions, `compiled`.
+The function call `compiled.factorial(10)` runs the C-compiled version of the ``factorial`` function. `.compiled()` creates and imports a python module containing all the decorated functions. It returns a module with the compiled functions, `compiled`. Compiled functions can call other compiled functions.
 
 ## Convert Python Code into OpenCL code and run it with PyOpenCL
 
@@ -95,7 +96,7 @@ Here is a solver for the Laplace equation "d^2 u = d in 2D"
             left = new_int(site-1)
             right = new_int(site+1)
             w[site] = 1.0/4*(u[up]+u[down]+u[left]+u[right] - q[site])
-    print opencl.getcode(constants=dict(n=300))
+    print opencl.convert(constants=dict(n=300))
 
 Output:
 
@@ -139,7 +140,7 @@ Here `__kernel`, `__global`, and `__local` are OpenCL modifiers. `get_global_id`
             except e:
                 alert(e)
         jQuery('button').click(lambda: g())
-    print js.getcode(call='f')
+    print js.convert(call='f')
 
 Output:
 
@@ -170,4 +171,3 @@ It uses the meta library to convert python code into an "Abstract Syntax Three".
 In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned.
 
 OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the "example_3.py" file.
-

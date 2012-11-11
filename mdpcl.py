@@ -83,6 +83,7 @@ def distutil_compile_and_import(module_name, code, build_dir=None):
 
 
 class C99Handler(object):
+
     sep = ' ' * 4
     special_functions = {
         'REFD': lambda args: '(*(%s))' % ', '.join(args),
@@ -319,6 +320,7 @@ class C99Handler(object):
 
 
 class JavaScriptHandler(C99Handler):
+
     special_functions = {'new': lambda args: 'new %s' % ', '.join(args)}
     substitutions = {'NULL': 'null', 'True': 'true', 'False': 'false'}
 
@@ -381,6 +383,7 @@ class JavaScriptHandler(C99Handler):
 
 
 class Compiler(object):
+
     def __init__(self, handler=None):
         self.functions = {}
         self.handler = handler or C99Handler()
@@ -402,7 +405,7 @@ class Compiler(object):
             return func
         return wrap
 
-    def getcode(self, headers=False, constants=None, call=False):
+    def convert(self, headers=False, constants=None, call=False):
         """
         Returns all decorated Python code converted to target language
         constants is a dict() of constants to be used in convesion
@@ -431,11 +434,13 @@ class Compiler(object):
         returns modules conatining compiled versions of those functions
         Attention: this function performs a temporary change of directory
         """
+        if self.handler.__class__ != C99Handler:
+            raise NotImplementedError("Required a C99Handler")
         map_types = {'unsigned': 'i', 'unsigned int': 'i', 'int': 'i',
                      'long': 'l', 'float': 'f', 'double': 'd', 'char': 'c',
                      'short': 'h', 'char*': 's', 'PyObject*': 'O'}
         filename = 'mdpcl'
-        code = self.getcode(headers=True, constants=constants)
+        code = self.convert(headers=True, constants=constants)
         python_source = '#include "Python.h"\n\n'
         python_source += code
         module_name = 'c' + str(uuid.uuid4()).replace('-', '')
@@ -464,12 +469,13 @@ class Compiler(object):
 
 if HAVE_PYOPENCL:
     class Device(object):
+
         flags = pyopencl.mem_flags
 
         def __init__(self):
             self.ctx = pyopencl.create_some_context()
             self.queue = pyopencl.CommandQueue(self.ctx)
-            self.define = Compiler()
+            self.compiler = Compiler()
 
         def buffer(self, source=None, size=0, mode=pyopencl.mem_flags.READ_WRITE):
             if source is not None:
@@ -503,7 +509,7 @@ def test_c99():
         d = new_ptr_int(CAST(ptr_int, ADDR(c)))
         c = REFD(d)
         return c
-    print c99.getcode(headers=False, constants=dict(n=10))
+    print c99.convert(headers=False, constants=dict(n=10))
 
 
 def test_C_compile():
@@ -517,7 +523,8 @@ def test_C_compile():
         return output
     compiled = c99.compile()
     print compiled.factorial(10)
-
+    new_int = int
+    assert compiled.factorial(10) == factorial(10)
 
 def test_OpenCL():
     if not HAVE_PYOPENCL:
@@ -525,10 +532,10 @@ def test_OpenCL():
         sys.exit(1)
     device = Device()
 
-    @device.define('kernel',
-                   w='global:ptr_float',
-                   u='global:const:ptr_float',
-                   q='global:const:ptr_float')
+    @device.compiler('kernel',
+                     w='global:ptr_float',
+                     u='global:const:ptr_float',
+                     q='global:const:ptr_float')
     def solve(w, u, q):
         x = new_int(get_global_id(0))
         y = new_int(get_global_id(1))
@@ -540,7 +547,7 @@ def test_OpenCL():
             right = new_int(site + 1)
             w[site] = 1.0 / 4 * (u[up] + u[down] + u[left] + u[
                                  right] - q[site])
-    print device.define.getcode(headers=True, constants=dict(n=300))
+    print device.compiler.convert(headers=True, constants=dict(n=300))
 
 
 def test_JS():
@@ -558,7 +565,7 @@ def test_JS():
             except e:
                 alert(e)
         jQuery('button').click(lambda: g())
-    print js.getcode(call='f')
+    print js.convert(call='f')
 
 if __name__ == '__main__':
     test_c99()
