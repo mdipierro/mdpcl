@@ -536,7 +536,6 @@ class Compiler(object):
                                    name=name, args=args,
                                    parsing_code=parsing_code,
                                    funcs=funcs)
-        print python_source
         module = distutil_compile_and_import(module_name, python_source)
         return module
 
