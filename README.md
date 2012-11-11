@@ -1,9 +1,11 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. It implements from of the functionalities of Cython + CLyter + Pyjamas. mdpcl consists of a single file containing about 300 lines of code. It is based on the Python ast module, and the these fantastic libraries:
+mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript. mdpcl consists of a single file containing about 300 lines of code. Some of the mdpcl functionalities overlap with Cython, CLyter, and Pyjamas. 
+
+mdpcl is based on the Python ast module, and the these fantastic libraries:
 
 - http://pypi.python.org/pypi/meta (always required)
-- http://pypi.python.org/pypi/pyopencl (required for opencl)
+- http://pypi.python.org/pypi/pyopencl (required only to run opencl code)
 
 The conversion is purely syntatical and assumes all used symbols are valid in the target.
 It only check for undefined variables used in assignments. You can only use types which are defined on the target. This means you can use a list or hash table if converting to JS not but if converting to C99 or OpenCL.
@@ -168,3 +170,4 @@ It uses the meta library to convert python code into an "Abstract Syntax Three".
 In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned.
 
 OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the "example_3.py" file.
+
