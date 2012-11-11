@@ -1,6 +1,6 @@
 # mdpcl
 
-mdpcl is a minimalist library that dynamically converts decorated Python code into C99, OpenCL, or JavaScript.
+mdpcl is a minimalist library that dynamically converts decorated Python functions into C99, OpenCL, or JavaScript. In the C99 it also has the ability to compile the functions to machine language and allow you to call the compiled one instead of the interpreted one.
 
 It consists of a single pure-Python file containing about 600 lines of code. Some of the mdpcl functionalities overlap with Cython, CLyter, and Pyjamas. 
 
@@ -65,12 +65,13 @@ Notice variables are declared via `new_int` or similar pseudo-function. Use `new
     c99 = Compiler()
     @c99(n='int')
     def factorial(n):
-        output = new_int(1)
+        output = 1
         for k in range(1,n+1):
             output = output*n
         return output
     compiled = c99.compile()
     print compiled.factorial(10)
+    assert factorial(10) == compiled.factorial(10)
 
 The function call `compiled.factorial(10)` runs the C-compiled version of the ``factorial`` function. `.compiled()` creates and imports a python module containing all the decorated functions. It returns a module with the compiled functions, `compiled`. Compiled functions can call other compiled functions.
 

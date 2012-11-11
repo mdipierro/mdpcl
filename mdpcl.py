@@ -232,7 +232,15 @@ class C99Handler(object):
                 self.symbols[left.id] = right.func.id[4:]
                 right = right.args[0] if right.args else None
             else:
-                raise RuntimeError('unkown C-type %s' % left.id)
+                # guess type
+                if isinstance(right,ast.Num) and isinstance(right.n,float):
+                    self.symbols[left.id] = 'float'
+                elif isinstance(right,ast.Num) and isinstance(right.n,int):
+                    self.symbols[left.id] = 'int'
+                elif isinstance(right,ast.Str):
+                    self.symbols[left.id] = 'ptr_char'
+                else:
+                    raise RuntimeError('unkown C-type %s' % left.id)
         return '%s = %s;' % (
             self.t(item.targets[0]), self.t(right)) if right else ''
 
@@ -519,13 +527,12 @@ def test_C_compile():
 
     @c99(n='int')
     def factorial(n):
-        output = new_int(1)
+        output = 1
         for k in range(1, n + 1):
             output = output * k
         return output
     compiled = c99.compile()
     print compiled.factorial(10)
-    new_int = int
     assert compiled.factorial(10) == factorial(10)
 
 def test_OpenCL():
