@@ -54,21 +54,21 @@ C0 = """
 #define IS_PY3K
 #endif
 """
-C1 = '%s %s; if(!PyArg_ParseTuple(args, "%s", &%s)) return NULL;\n'
-C2 = '{"%(name)s", %(module_name)s_%(name)s, METH_VARARGS},\n'
+C2 = '  {"%(name)s", %(module_name)s_%(name)s, METH_VARARGS},\n'
 C3 = """
 static PyObject * %(module_name)s_%(name)s(PyObject *self, PyObject *args) {
-  int retval;
-  %(parsing_code)s
+  %(crettype)s retval;
+%(vars)s
+  if(!PyArg_ParseTuple(args, "%(types)s"%(vars2)s)) return NULL;\n
   retval = %(name)s(%(args)s);
-  return Py_BuildValue("i", retval);
+  return Py_BuildValue("%(rettype)s", retval);
 } """
 C4 = """
-static PyMethodDef __%(name)s__%(module_name)s_Methods[] = {
-  %(funcs)s  {NULL, NULL}
+static PyMethodDef %(module_name)s_Methods[] = {
+%(funcs)s  {NULL, NULL}
 };
 DL_EXPORT(void) init%(module_name)s(void) {
-  Py_InitModule("%(module_name)s", __%(name)s__%(module_name)s_Methods);
+  Py_InitModule("%(module_name)s", %(module_name)s_Methods);
 }
 """
 
@@ -468,7 +468,7 @@ class Compiler(object):
             return func
         return wrap
 
-    def convert(self, headers=False, constants=None, call=False, includes=''):
+    def convert(self, headers=False, constants=None, call=False):
         """
         Returns all decorated Python code converted to target language
         constants is a dict() of constants to be used in convesion
@@ -477,8 +477,6 @@ class Compiler(object):
         """
         if constants:
             self.handler.constants.update(constants)
-        if not includes:
-            includes = []
         defs, funcs = [], []
         for name, info in self.functions.items():
             code = self.handler.convert(info['ast'],
@@ -488,22 +486,24 @@ class Compiler(object):
             if headers:
                 defs.append(code.split(' {', 1)[0] + ';')
             funcs.append(code)
-        code = '\n\n'.join(includes + defs + funcs)
+        code = '\n\n'.join(defs + funcs)
         if call:
             code = code + '\n\n%s();' % call
         return code
 
-    def compile(self, constants=None):
+    def compile(self, constants=None, includes=None):
         """
         Compiles all decotared code and returns an
         returns modules conatining compiled versions of those functions
         Attention: this function performs a temporary change of directory
         """
+        if not includes:
+            includes = []
         if self.handler.__class__ != C99Handler:
             raise NotImplementedError("Required a C99Handler")
         filename = 'mdpcl'
         code = self.convert(headers=True, constants=constants)
-        python_source = C0
+        python_source = C0+'\n'.join(includes)+'\n'
         python_source += code
         module_name = 'c' + str(uuid.uuid4()).replace('-', '')
         funcs = ''
@@ -514,18 +514,29 @@ class Compiler(object):
             nargs = code.co_argcount
             args = ','.join(code.co_varnames[:nargs])
             parsing_code = ''
+            vars, types, vars2 = '', '', ''
             for k, v in info['types'].items():
-                parsing_code += C1 % (v, k, MAP_TYPES[v], k)
+                t = MAP_TYPES[v]
+                vars += '  %s %s;' % (v,k)
+                types += MAP_TYPES[v]
+                vars2 += ', &%s' % k
             funcs += C2 % dict(name=name, module_name=module_name)
+            crettype = self.handler.rettype
+            rettype = MAP_TYPES[crettype]
             python_source += C3 % dict(module_name=module_name,
                                        filename=filename,
                                        name=name, args=args,
-                                       parsing_code=parsing_code)
+                                       vars = vars,
+                                       types = types,
+                                       vars2 = vars2,
+                                       crettype = crettype,
+                                       rettype = rettype)
         python_source += C4 % dict(module_name=module_name,
                                    filename=filename,
                                    name=name, args=args,
                                    parsing_code=parsing_code,
                                    funcs=funcs)
+        print python_source
         module = distutil_compile_and_import(module_name, python_source)
         return module
 

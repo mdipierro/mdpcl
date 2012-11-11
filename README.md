@@ -122,7 +122,7 @@ Output:
     }
 
 
-Here `__kernel`, `__global`, and `__local` are OpenCL modifiers. `get_global_id` and `get_global_size` are OpenCL specific functions. A more comlete example that puts this code into context and runs it with PyOpenCL can be found in the example_3.py file.
+Here `__kernel`, `__global`, and `__local` are OpenCL modifiers. `get_global_id` and `get_global_size` are OpenCL specific functions. A more comlete example that puts this code into context and runs it with PyOpenCL can be found in the `example_laplace_opencl.py` file.
 
 ## Convert Python Code into Javascript Code 
 
@@ -169,6 +169,6 @@ Supported control structures include `def`, `if..else`, `for ... range`, `while`
 
 It uses the meta library to convert python code into an "Abstract Syntax Three". It then calls a handler (C99Handler by default or JavaScriptHandler) which converts the AST into the target language.
 
-In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned.
+In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned. A more complex of a C implementation of Black-Scholes solver can be found in `example_black_scholes.py`.
 
-OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the "example_3.py" file.
+OpenCL code is just C99 code with special types modifiers. mdpcl provides the `Device` class which allows interaction with GPU devices (and other OpenCL devices) using the myOpenCL library. This handles mapping of host memory into device memory, JIT compilation of OpenCL code, deploying and running on OpenCL devices. A complete example in in the `example_laplace_opencl.py` file.
