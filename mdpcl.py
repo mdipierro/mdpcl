@@ -468,7 +468,7 @@ class Compiler(object):
             return func
         return wrap
 
-    def convert(self, headers=False, constants=None, call=False):
+    def convert(self, headers=False, constants=None, call=False, includes=''):
         """
         Returns all decorated Python code converted to target language
         constants is a dict() of constants to be used in convesion
@@ -477,6 +477,8 @@ class Compiler(object):
         """
         if constants:
             self.handler.constants.update(constants)
+        if not includes:
+            includes = []
         defs, funcs = [], []
         for name, info in self.functions.items():
             code = self.handler.convert(info['ast'],
@@ -486,7 +488,7 @@ class Compiler(object):
             if headers:
                 defs.append(code.split(' {', 1)[0] + ';')
             funcs.append(code)
-        code = '\n\n'.join(defs + funcs)
+        code = '\n\n'.join(includes + defs + funcs)
         if call:
             code = code + '\n\n%s();' % call
         return code
