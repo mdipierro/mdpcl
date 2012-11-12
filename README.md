@@ -34,7 +34,7 @@ Examples:
     print c99.convert(headers=False, constants=dict(n=10))
 
 Output:
-    
+
     int f(int a, int b) {
         long k;
         int c;
@@ -124,7 +124,7 @@ Output:
 
 Here `__kernel`, `__global`, and `__local` are OpenCL modifiers. `get_global_id` and `get_global_size` are OpenCL specific functions. A more comlete example that puts this code into context and runs it with PyOpenCL can be found in the `example_laplace_opencl.py` file.
 
-## Convert Python Code into Javascript Code 
+## Convert Python Code into Javascript Code
 
 (works with jQuery and every other JS library)
 
@@ -167,7 +167,7 @@ Supported control structures include `def`, `if..else`, `for ... range`, `while`
 
 ## How does it work?
 
-It uses the meta library to convert python code into an "Abstract Syntax Three". It then calls a handler (C99Handler by default or JavaScriptHandler) which converts the AST into the target language.
+It uses the meta library to convert python code into an "Abstract Syntax Tree". It then calls a handler (C99Handler by default or JavaScriptHandler) which converts the AST into the target language.
 
 In the C99 case, `c99.compile()` uses distutil to compile the source to a binary Python module and it imports the module. The module is returned. A more complex of a C implementation of Black-Scholes solver can be found in `example_black_scholes.py`.
 
