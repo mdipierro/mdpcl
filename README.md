@@ -67,7 +67,7 @@ Notice variables are declared via `new_int` or similar pseudo-function. Use `new
     def factorial(n):
         output = 1
         for k in range(1,n+1):
-            output = output*n
+            output = output*k
         return output
     compiled = c99.compile()
     print compiled.factorial(10)
