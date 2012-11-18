@@ -49,7 +49,7 @@ else:
 # define useful constants
 
 C0 = """
-#include "python.h"
+#include "Python.h"
 #if PY_MAJOR_VERSION >= 3
 #define IS_PY3K
 #endif
